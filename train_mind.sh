@@ -12,8 +12,8 @@ python main.py \
     --precision bf16 \
     --accelerator gpu \
     --devices 1 \
-    --llm_path /path/to/llama2-7b-hf \
-    --rec_model_path ./rec_model/mind.pt \
+    --llm_path ./models/llama2-7b-hf \
+    --rec_model_path ./SASRec.pth \
     --prompt_path ./prompt/news.txt \
     --ckpt_dir ./checkpoints/mind/ \
     --log_dir mind_logs \

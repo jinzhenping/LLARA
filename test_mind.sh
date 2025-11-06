@@ -1,0 +1,24 @@
+python main.py \
+    --dataset mind_data \
+    --data_dir data/ref/mind \
+    --model_name mlp_projector \
+    --loss lm \
+    --batch_size 8 \
+    --num_workers 8 \
+    --precision bf16 \
+    --accelerator gpu \
+    --devices 1 \
+    --llm_path /path/to/llama2-7b-hf \
+    --rec_model_path ./rec_model/mind.pt \
+    --prompt_path ./prompt/news.txt \
+    --ckpt_dir ./checkpoints/mind/ \
+    --log_dir mind_logs \
+    --output_dir ./output/mind/ \
+    --rec_embed SASRec \
+    --llm_tuning lora \
+    --lora_r 8 \
+    --lora_alpha 32 \
+    --lora_dropout 0.1 \
+    --mode test \
+    --ckpt_path /path/to/checkpoint.ckpt
+

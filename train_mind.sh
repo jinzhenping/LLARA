@@ -11,7 +11,7 @@ python main.py \
     --check_val_every_n_epoch 1 \
     --precision bf16 \
     --accelerator gpu \
-    --devices 0 \
+    --devices 1 \
     --llm_path ./llama2-7b-hf \
     --rec_model_path ./SASRec.pth \
     --prompt_path ./prompt/news.txt \

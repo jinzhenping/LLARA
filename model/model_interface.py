@@ -203,9 +203,20 @@ class MInterface(pl.LightningModule):
         self.llama_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         self.llama_tokenizer.padding_side = "right"
         self.llama_tokenizer.add_special_tokens({'additional_special_tokens': ['[PH]','[HistoryEmb]','[CansEmb]','[ItemEmb]']})
-        # PEFT 적용을 위해 먼저 float32로 로드
+        # 모델 로드 (float32로 로드하여 PEFT 호환성 확보)
         self.llama_model = LlamaForCausalLM.from_pretrained(llm_path, torch_dtype=torch.float32)
         self.llama_model.resize_token_embeddings(len(self.llama_tokenizer))
+        # 모델을 평가 모드로 설정하고 CPU에 명시적으로 배치
+        self.llama_model.eval()
+        self.llama_model = self.llama_model.to('cpu')
+        
+        # 모델의 파라미터 dtype 확인 및 설정 (PEFT 호환성을 위해)
+        # 첫 번째 파라미터의 dtype을 확인하여 모든 파라미터가 같은 dtype인지 확인
+        param_dtype = next(self.llama_model.parameters()).dtype
+        if param_dtype != torch.float32:
+            # 모든 파라미터를 float32로 변환
+            self.llama_model = self.llama_model.to(torch.float32)
+        
         if self.hparams.llm_tuning == 'lora':
             if self.hparams.peft_dir:
                 self.llama_model = PeftModel.from_pretrained(self.llama_model, self.hparams.peft_dir, is_trainable=True)
@@ -215,14 +226,13 @@ class MInterface(pl.LightningModule):
                 else:
                     peft_config = LoraConfig(task_type=TaskType.CAUSAL_LM,
                                              inference_mode=False,
-                                             r=self.hparams.lora_r,
-                                             lora_alpha=self.hparams.lora_alpha,
+                                             r=int(self.hparams.lora_r),
+                                             lora_alpha=int(self.hparams.lora_alpha),
                                              lora_dropout=self.hparams.lora_dropout,
                                              target_modules=['k_proj', 'v_proj', 'q_proj', 'o_proj', 'gate_proj', 'up_proj', 'down_proj'])
                 self.peft_config = peft_config
+                # PEFT 적용 (모델이 이미 CPU에 있고 float32 dtype)
                 self.llama_model = get_peft_model(self.llama_model, peft_config)
-            # PEFT 적용 후 bfloat16으로 변환
-            self.llama_model = self.llama_model.to(torch.bfloat16)
             self.llama_model.print_trainable_parameters()
         elif self.hparams.llm_tuning == 'freeze':
             # freeze 모드에서는 bfloat16으로 변환

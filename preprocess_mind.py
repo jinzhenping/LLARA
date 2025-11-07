@@ -19,8 +19,15 @@ def load_news_mapping(news_file='MIND_news.tsv'):
     for idx, row in news_df.iterrows():
         news_id_str = str(row[0])  # N1, N2, ...
         news_id_num = int(news_id_str[1:])  # 숫자 부분만 추출
-        news_title = str(row[3]) if pd.notna(row[3]) else "Unknown"
-        news_id2name[news_id_num] = news_title
+        
+        # 카테고리, 서브카테고리, 제목을 모두 포함
+        category = str(row[1]) if pd.notna(row[1]) else "Unknown"
+        subcategory = str(row[2]) if pd.notna(row[2]) else "Unknown"
+        title = str(row[3]) if pd.notna(row[3]) else "Unknown"
+        
+        # 형식: "카테고리 - 서브카테고리: 제목"
+        news_name = f"{category} - {subcategory}: {title}"
+        news_id2name[news_id_num] = news_name
         news_id2idx[news_id_str] = news_id_num
     
     print(f"Loaded {len(news_id2name)} news items")

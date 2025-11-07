@@ -7,8 +7,8 @@ python main.py \
     --num_workers 8 \
     --precision bf16 \
     --accelerator gpu \
-    --devices 1 \
-    --llm_path ./models/llama2-7b-hf \
+    --devices 0 \
+    --llm_path ./llama2-7b-hf \
     --rec_model_path ./SASRec.pth \
     --prompt_path ./prompt/news.txt \
     --ckpt_dir ./checkpoints/mind/ \

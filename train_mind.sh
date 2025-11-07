@@ -3,10 +3,10 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
     --data_dir data/ref/mind \
     --model_name mlp_projector \
     --loss lm \
-    --batch_size 2 \
+    --batch_size 1 \
     --num_workers 4 \
     --lr 1e-3 \
-    --accumulate_grad_batches 32 \
+    --accumulate_grad_batches 64 \
     --max_epochs 10 \
     --check_val_every_n_epoch 1 \
     --precision bf16 \

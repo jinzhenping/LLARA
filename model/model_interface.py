@@ -287,11 +287,77 @@ class MInterface(pl.LightningModule):
 
     def load_rec_model(self, rec_model_path):
         print('Loading Rec Model')
-        self.rec_model = torch.load(rec_model_path, map_location="cpu")
-        self.rec_model.eval()
-        for name, param in self.rec_model.named_parameters():
-            param.requires_grad = False
-        print('Loding Rec model Done')
+        # 파일 존재 및 크기 확인
+        if not os.path.exists(rec_model_path):
+            raise FileNotFoundError(f"추천 모델 파일을 찾을 수 없습니다: {rec_model_path}")
+        
+        file_size = os.path.getsize(rec_model_path)
+        if file_size == 0:
+            raise ValueError(f"추천 모델 파일이 비어있습니다 (0 bytes): {rec_model_path}\n"
+                           f"MIND 데이터셋용 추천 모델을 먼저 학습해야 합니다.")
+        
+        try:
+            loaded = torch.load(rec_model_path, map_location="cpu")
+            
+            # state_dict인지 모델 객체인지 확인
+            if isinstance(loaded, dict) and not hasattr(loaded, 'eval'):
+                # state_dict인 경우 모델을 먼저 생성
+                from recommender.A_SASRec_final_bce_llm import SASRec, Caser, GRU
+                
+                # 모델 파라미터 추정 (state_dict의 키에서)
+                if self.hparams.rec_embed == "SASRec":
+                    # item_num은 padding_item_id + 1로 추정
+                    item_num = self.hparams.padding_item_id + 1
+                    # state_size는 보통 50 (코드에서 max_len=50 사용)
+                    state_size = 50
+                    hidden_size = self.hparams.rec_size
+                    dropout = 0.2  # 기본값
+                    device = torch.device('cpu')
+                    
+                    self.rec_model = SASRec(
+                        hidden_size=hidden_size,
+                        item_num=item_num,
+                        state_size=state_size,
+                        dropout=dropout,
+                        device=device
+                    )
+                    self.rec_model.load_state_dict(loaded)
+                elif self.hparams.rec_embed == "Caser":
+                    item_num = self.hparams.padding_item_id + 1
+                    hidden_size = self.hparams.rec_size
+                    dropout = 0.2
+                    device = torch.device('cpu')
+                    
+                    self.rec_model = Caser(
+                        hidden_size=hidden_size,
+                        item_num=item_num,
+                        dropout=dropout,
+                        device=device
+                    )
+                    self.rec_model.load_state_dict(loaded)
+                elif self.hparams.rec_embed == "GRU":
+                    item_num = self.hparams.padding_item_id + 1
+                    hidden_size = self.hparams.rec_size
+                    dropout = 0.2
+                    device = torch.device('cpu')
+                    
+                    self.rec_model = GRU(
+                        hidden_size=hidden_size,
+                        item_num=item_num,
+                        dropout=dropout,
+                        device=device
+                    )
+                    self.rec_model.load_state_dict(loaded)
+            else:
+                # 모델 객체인 경우
+                self.rec_model = loaded
+            
+            self.rec_model.eval()
+            for name, param in self.rec_model.named_parameters():
+                param.requires_grad = False
+            print('Loading Rec model Done')
+        except Exception as e:
+            raise RuntimeError(f"추천 모델 로딩 실패: {rec_model_path}\n에러: {str(e)}")
 
     def encode_items(self, seq):
         if self.hparams.rec_embed=="SASRec":

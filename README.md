@@ -73,3 +73,5 @@ sh test_lastfm.sh
 ```
 
 
+sh train_mind.sh
+sh test_mind.sh

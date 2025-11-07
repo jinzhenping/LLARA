@@ -203,11 +203,12 @@ class MInterface(pl.LightningModule):
         self.llama_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         self.llama_tokenizer.padding_side = "right"
         self.llama_tokenizer.add_special_tokens({'additional_special_tokens': ['[PH]','[HistoryEmb]','[CansEmb]','[ItemEmb]']})
-        self.llama_model = LlamaForCausalLM.from_pretrained(llm_path, torch_dtype=torch.bfloat16)
+        # PEFT 적용을 위해 먼저 float32로 로드
+        self.llama_model = LlamaForCausalLM.from_pretrained(llm_path, torch_dtype=torch.float32)
         self.llama_model.resize_token_embeddings(len(self.llama_tokenizer))
         if self.hparams.llm_tuning == 'lora':
             if self.hparams.peft_dir:
-                self.llama_model = PeftModel.from_pretrained(self.llm_model, self.hparams.peft_dir, is_trainable=True)
+                self.llama_model = PeftModel.from_pretrained(self.llama_model, self.hparams.peft_dir, is_trainable=True)
             else:
                 if self.hparams.peft_config:
                     peft_config = LoraConfig(**LoraConfig.from_json_file(self.hparams.peft_config))
@@ -220,13 +221,17 @@ class MInterface(pl.LightningModule):
                                              target_modules=['k_proj', 'v_proj', 'q_proj', 'o_proj', 'gate_proj', 'up_proj', 'down_proj'])
                 self.peft_config = peft_config
                 self.llama_model = get_peft_model(self.llama_model, peft_config)
+            # PEFT 적용 후 bfloat16으로 변환
+            self.llama_model = self.llama_model.to(torch.bfloat16)
             self.llama_model.print_trainable_parameters()
         elif self.hparams.llm_tuning == 'freeze':
+            # freeze 모드에서는 bfloat16으로 변환
+            self.llama_model = self.llama_model.to(torch.bfloat16)
             for name, param in self.llama_model.named_parameters():
                 param.requires_grad = False
         elif self.hparams.llm_tuning == 'freeze_lora':
             if self.hparams.peft_dir:
-                self.llama_model = PeftModel.from_pretrained(self.llm_model, self.hparams.peft_dir, is_trainable=True)
+                self.llama_model = PeftModel.from_pretrained(self.llama_model, self.hparams.peft_dir, is_trainable=True)
             else:
                 if self.hparams.peft_config:
                     peft_config = LoraConfig(**LoraConfig.from_json_file(self.hparams.peft_config))
@@ -239,6 +244,8 @@ class MInterface(pl.LightningModule):
                                              target_modules=['k_proj', 'v_proj', 'q_proj', 'o_proj', 'gate_proj', 'up_proj', 'down_proj'])
                 self.peft_config = peft_config
                 self.llama_model = get_peft_model(self.llama_model, peft_config)
+            # PEFT 적용 후 bfloat16으로 변환
+            self.llama_model = self.llama_model.to(torch.bfloat16)
             for name, param in self.llama_model.named_parameters():
                 param.requires_grad = False
             self.llama_model.print_trainable_parameters()

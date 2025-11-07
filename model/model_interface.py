@@ -306,22 +306,65 @@ class MInterface(pl.LightningModule):
                 
                 # 모델 파라미터 추정 (state_dict의 키에서)
                 if self.hparams.rec_embed == "SASRec":
-                    # item_num은 padding_item_id + 1로 추정
-                    item_num = self.hparams.padding_item_id + 1
-                    # state_size는 보통 50 (코드에서 max_len=50 사용)
-                    state_size = 50
-                    hidden_size = self.hparams.rec_size
-                    dropout = 0.2  # 기본값
-                    device = torch.device('cpu')
+                    # state_dict의 키 구조 확인
+                    state_dict_keys = list(loaded.keys())
                     
-                    self.rec_model = SASRec(
-                        hidden_size=hidden_size,
-                        item_num=item_num,
-                        state_size=state_size,
-                        dropout=dropout,
-                        device=device
-                    )
-                    self.rec_model.load_state_dict(loaded)
+                    # 다른 구조의 SASRec인지 확인 (item_emb, pos_emb 등)
+                    if "item_emb.weight" in state_dict_keys:
+                        # 원본 SASRec 구조 - 키 매핑 필요
+                        # item_num은 item_emb.weight의 첫 번째 차원에서 추정
+                        item_num = loaded["item_emb.weight"].shape[0] - 1
+                        hidden_size = loaded["item_emb.weight"].shape[1]
+                        # state_size는 pos_emb.weight의 첫 번째 차원에서 추정
+                        if "pos_emb.weight" in loaded:
+                            state_size = loaded["pos_emb.weight"].shape[0]
+                        else:
+                            state_size = 50  # 기본값
+                        dropout = 0.2
+                        device = torch.device('cpu')
+                        
+                        self.rec_model = SASRec(
+                            hidden_size=hidden_size,
+                            item_num=item_num,
+                            state_size=state_size,
+                            dropout=dropout,
+                            device=device
+                        )
+                        
+                        # 키 매핑 생성
+                        new_state_dict = {}
+                        key_mapping = {
+                            "item_emb.weight": "item_embeddings.weight",
+                            "pos_emb.weight": "positional_embeddings.weight",
+                        }
+                        
+                        # 가능한 키만 매핑
+                        for old_key, new_key in key_mapping.items():
+                            if old_key in loaded:
+                                new_state_dict[new_key] = loaded[old_key]
+                        
+                        # 나머지는 strict=False로 로드 (호환되는 것만)
+                        self.rec_model.load_state_dict(new_state_dict, strict=False)
+                        print(f"Warning: 원본 SASRec 구조를 사용합니다. 일부 레이어만 로드됩니다.")
+                        print(f"로드된 키: {list(new_state_dict.keys())}")
+                    else:
+                        # 현재 구조와 동일한 경우
+                        # item_num은 padding_item_id + 1로 추정
+                        item_num = self.hparams.padding_item_id + 1
+                        # state_size는 보통 50 (코드에서 max_len=50 사용)
+                        state_size = 50
+                        hidden_size = self.hparams.rec_size
+                        dropout = 0.2  # 기본값
+                        device = torch.device('cpu')
+                        
+                        self.rec_model = SASRec(
+                            hidden_size=hidden_size,
+                            item_num=item_num,
+                            state_size=state_size,
+                            dropout=dropout,
+                            device=device
+                        )
+                        self.rec_model.load_state_dict(loaded, strict=False)
                 elif self.hparams.rec_embed == "Caser":
                     item_num = self.hparams.padding_item_id + 1
                     hidden_size = self.hparams.rec_size

@@ -518,24 +518,25 @@ class MInterface(pl.LightningModule):
         item_embeds=self.encode_items(item_id)
             
         # gradient를 요구하는 방식으로 embedding 교체
-        # in-place 연산을 사용하되, gradient가 전파되도록 함
-        # input_embeds에 직접 할당하면 gradient가 전파됨 (item_emb가 gradient를 요구하는 경우)
+        # in-place 연산을 피하기 위해 clone() 사용 (gradient는 전파됨)
+        # clone()은 gradient를 유지하므로 안전하게 사용 가능
+        output_embeds = input_embeds.clone()
+        
         for i in range(len(batch["len_seq"])):
             if (batch["tokens"].input_ids[i]==his_token_id).nonzero().shape[0]>0:
                 idx_tensor=(batch["tokens"].input_ids[i]==his_token_id).nonzero().view(-1)
                 for idx, item_emb in zip(idx_tensor,his_item_embeds[i,:batch["len_seq"][i].item()]):
                     # gradient를 유지하기 위해 직접 할당
-                    # item_emb가 gradient를 요구하면 input_embeds도 gradient를 요구하게 됨
-                    input_embeds[i,idx]=item_emb
+                    output_embeds[i,idx]=item_emb
             if (batch["tokens"].input_ids[i]==cans_token_id).nonzero().shape[0]>0:
                 idx_tensor=(batch["tokens"].input_ids[i]==cans_token_id).nonzero().view(-1)
                 for idx, item_emb in zip(idx_tensor,cans_item_embeds[i,:batch["len_cans"][i].item()]):
                     # gradient를 유지하기 위해 직접 할당
-                    input_embeds[i,idx]=item_emb
+                    output_embeds[i,idx]=item_emb
             if (batch["tokens"].input_ids[i]==item_token_id).nonzero().shape[0]>0:
                 idx=(batch["tokens"].input_ids[i]==item_token_id).nonzero().item()
-                input_embeds[i,idx]=item_embeds[i]
-        return input_embeds
+                output_embeds[i,idx]=item_embeds[i]
+        return output_embeds
      
     def calculate_hr1(self,eval_content):
         correct_num=0

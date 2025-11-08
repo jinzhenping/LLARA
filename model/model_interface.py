@@ -62,6 +62,7 @@ class MInterface(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         # 모델을 학습 모드로 설정
         self.llama_model.train()
+        self.projector.train()  # projector도 학습 모드로 설정
         if self.scheduler:
             self.scheduler.step(self.trainer.global_step, self.current_epoch, self.trainer.max_steps)
         if batch["flag"]:
@@ -152,9 +153,17 @@ class MInterface(pl.LightningModule):
             weight_decay = self.hparams.weight_decay
         else:
             weight_decay = 0
+        # 학습 가능한 파라미터만 optimizer에 포함
+        # PEFT 모델의 경우 학습 가능한 파라미터만 포함
+        if self.hparams.llm_tuning in ['lora', 'freeze_lora']:
+            # LoRA 파라미터만 포함
+            llama_params = [p for p in self.llama_model.parameters() if p.requires_grad]
+        else:
+            llama_params = list(self.llama_model.parameters())
+        
         optimizer = torch.optim.Adam([
             {'params': self.projector.parameters(), 'lr': self.hparams.lr, 'weight_decay':weight_decay},
-            {'params': self.llama_model.parameters(), 'lr': self.hparams.lr}
+            {'params': llama_params, 'lr': self.hparams.lr}
         ])
 
         if self.hparams.lr_scheduler is None:
@@ -471,10 +480,14 @@ class MInterface(pl.LightningModule):
         # 0부터 item_num까지 클리핑 (item_embeddings는 item_num + 1 크기)
         seq_clipped = torch.clamp(seq, min=0, max=max_item_id)
         
+        # rec_model은 eval 모드이지만, projector는 학습 가능하므로 gradient가 전파됨
+        # rec_model의 출력은 gradient를 요구하지 않지만, projector를 통해 gradient가 생성됨
         if self.hparams.rec_embed=="SASRec":
             item_rec_embs=self.rec_model.cacu_x(seq_clipped)
         elif self.hparams.rec_embed in ['Caser','GRU']:
             item_rec_embs=self.rec_model.item_embeddings(seq_clipped)
+        # projector는 학습 가능하므로 gradient가 전파됨
+        # 학습 모드에서는 projector의 출력이 gradient를 요구함
         item_txt_embs=self.projector(item_rec_embs)
         return item_txt_embs
     
@@ -484,7 +497,11 @@ class MInterface(pl.LightningModule):
 
     def wrap_emb(self, batch):
         # 입력 embedding 생성 (gradient를 요구하도록)
+        # 학습 모드에서는 embedding layer도 gradient를 요구하도록 설정
         input_embeds = self.llama_model.get_input_embeddings()(batch["tokens"].input_ids)
+        # input_embeds가 gradient를 요구하도록 설정 (필요한 경우)
+        if self.training:
+            input_embeds = input_embeds.requires_grad_(True)
         
         his_token_id=self.llama_tokenizer("[HistoryEmb]", return_tensors="pt",add_special_tokens=False).input_ids.item()
         cans_token_id=self.llama_tokenizer("[CansEmb]", return_tensors="pt",add_special_tokens=False).input_ids.item()
@@ -501,12 +518,14 @@ class MInterface(pl.LightningModule):
         item_embeds=self.encode_items(item_id)
             
         # gradient를 요구하는 방식으로 embedding 교체
-        # in-place 연산을 피하고 gradient가 전파되도록 함
+        # in-place 연산을 사용하되, gradient가 전파되도록 함
+        # input_embeds에 직접 할당하면 gradient가 전파됨 (item_emb가 gradient를 요구하는 경우)
         for i in range(len(batch["len_seq"])):
             if (batch["tokens"].input_ids[i]==his_token_id).nonzero().shape[0]>0:
                 idx_tensor=(batch["tokens"].input_ids[i]==his_token_id).nonzero().view(-1)
                 for idx, item_emb in zip(idx_tensor,his_item_embeds[i,:batch["len_seq"][i].item()]):
-                    # gradient를 유지하기 위해 직접 할당 (in-place 연산이지만 gradient는 유지됨)
+                    # gradient를 유지하기 위해 직접 할당
+                    # item_emb가 gradient를 요구하면 input_embeds도 gradient를 요구하게 됨
                     input_embeds[i,idx]=item_emb
             if (batch["tokens"].input_ids[i]==cans_token_id).nonzero().shape[0]>0:
                 idx_tensor=(batch["tokens"].input_ids[i]==cans_token_id).nonzero().view(-1)

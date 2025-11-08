@@ -92,7 +92,8 @@ class MInterface(pl.LightningModule):
         for i,generate in enumerate(generate_output):
             real=batch['correct_answer'][i]
             cans=batch['cans_name'][i]
-            generate=generate.strip().split("\n")[0]
+            # 전체 생성 텍스트 사용 (여러 줄일 수 있음)
+            generate=generate.strip()
             output.append((generate,real,cans))
         return output
 
@@ -107,10 +108,16 @@ class MInterface(pl.LightningModule):
         if not os.path.exists(self.hparams.output_dir):
             os.makedirs(self.hparams.output_dir)
         df.to_csv(op.join(self.hparams.output_dir, 'valid.csv'))
-        prediction_valid_ratio,hr=self.calculate_hr1(self.val_content)
-        metric=hr*prediction_valid_ratio
-        self.log('val_prediction_valid', prediction_valid_ratio, on_step=False, on_epoch=True, prog_bar=True)
-        self.log('val_hr', hr, on_step=False, on_epoch=True, prog_bar=True)
+        
+        # Ranking metrics 계산
+        mrr, ndcg5, hit1 = self.calculate_ranking_metrics(self.val_content)
+        
+        # metric은 MRR을 사용 (또는 원하는 대로 변경 가능)
+        metric = mrr
+        
+        self.log('val_mrr', mrr, on_step=False, on_epoch=True, prog_bar=True)
+        self.log('val_ndcg5', ndcg5, on_step=False, on_epoch=True, prog_bar=True)
+        self.log('val_hit1', hit1, on_step=False, on_epoch=True, prog_bar=True)
         self.log('metric', metric, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_test_epoch_start(self):
@@ -127,7 +134,8 @@ class MInterface(pl.LightningModule):
         for i,generate in enumerate(generate_output):
             real=batch['correct_answer'][i]
             cans=batch['cans_name'][i]
-            generate=generate.strip().split("\n")[0]
+            # 전체 생성 텍스트 사용 (여러 줄일 수 있음)
+            generate=generate.strip()
             output.append((generate,real,cans))
         return output
     
@@ -142,10 +150,16 @@ class MInterface(pl.LightningModule):
         if not os.path.exists(self.hparams.output_dir):
             os.makedirs(self.hparams.output_dir)
         df.to_csv(op.join(self.hparams.output_dir, 'test.csv'))
-        prediction_valid_ratio,hr=self.calculate_hr1(self.test_content)
-        metric=hr*prediction_valid_ratio
-        self.log('test_prediction_valid', prediction_valid_ratio, on_step=False, on_epoch=True, prog_bar=True)
-        self.log('test_hr', hr, on_step=False, on_epoch=True, prog_bar=True)
+        
+        # Ranking metrics 계산
+        mrr, ndcg5, hit1 = self.calculate_ranking_metrics(self.test_content)
+        
+        # metric은 MRR을 사용 (또는 원하는 대로 변경 가능)
+        metric = mrr
+        
+        self.log('test_mrr', mrr, on_step=False, on_epoch=True, prog_bar=True)
+        self.log('test_ndcg5', ndcg5, on_step=False, on_epoch=True, prog_bar=True)
+        self.log('test_hit1', hit1, on_step=False, on_epoch=True, prog_bar=True)
         self.log('metric', metric, on_step=False, on_epoch=True, prog_bar=True)
 
     def configure_optimizers(self):
@@ -538,6 +552,112 @@ class MInterface(pl.LightningModule):
                 output_embeds[i,idx]=item_embeds[i]
         return output_embeds
      
+    def parse_ranking(self, generate_text, candidates):
+        """생성된 텍스트에서 후보들의 순위를 파싱"""
+        generate_lower = generate_text.strip().lower()
+        candidates_lower = [c.strip().lower() for c in candidates]
+        
+        # 줄 단위로 분리 (여러 줄 출력인 경우)
+        lines = [line.strip() for line in generate_lower.split('\n') if line.strip()]
+        
+        # 각 후보가 어느 줄에 나타나는지 찾기
+        candidate_positions = []
+        for i, cand in enumerate(candidates_lower):
+            found = False
+            # 각 줄에서 후보를 찾기
+            for line_idx, line in enumerate(lines):
+                # 후보가 줄에 포함되어 있는지 확인 (단어 단위 매칭을 위해 공백으로 감싸기)
+                if cand in line:
+                    # 첫 번째 등장 위치를 찾기
+                    pos = line.find(cand)
+                    candidate_positions.append((line_idx, pos, i, cand))
+                    found = True
+                    break
+            
+            # 줄 단위로 찾지 못한 경우, 전체 텍스트에서 찾기
+            if not found:
+                pos = generate_lower.find(cand)
+                if pos >= 0:
+                    # 줄 번호를 추정 (대략적인 위치)
+                    line_idx = generate_lower[:pos].count('\n')
+                    candidate_positions.append((line_idx, pos, i, cand))
+        
+        # 순위 정렬: 먼저 줄 번호로, 그 다음 줄 내 위치로
+        candidate_positions.sort(key=lambda x: (x[0], x[1]))
+        
+        # 순위 리스트 생성 (ranked_indices)
+        ranked_indices = [idx for _, _, idx, _ in candidate_positions]
+        
+        # 모든 후보가 포함되지 않은 경우, 나머지를 뒤에 추가
+        all_indices = set(range(len(candidates)))
+        remaining_indices = sorted(list(all_indices - set(ranked_indices)))
+        ranked_indices.extend(remaining_indices)
+        
+        return ranked_indices
+    
+    def calculate_ranking_metrics(self, eval_content):
+        """MRR, nDCG@5, HIT@1 계산"""
+        mrr_scores = []
+        ndcg5_scores = []
+        hit1_scores = []
+        total_num = 0
+        
+        for i, generate in enumerate(eval_content["generate"]):
+            real = eval_content["real"][i]
+            cans = eval_content["cans"][i]
+            total_num += 1
+            
+            # 순위 파싱
+            ranked_indices = self.parse_ranking(generate, cans)
+            
+            # 정답의 인덱스 찾기
+            real_lower = real.strip().lower()
+            cans_lower = [c.strip().lower() for c in cans]
+            try:
+                ground_truth_idx = cans_lower.index(real_lower)
+            except ValueError:
+                # 정답이 후보에 없는 경우 (이론적으로는 발생하지 않아야 함)
+                mrr_scores.append(0.0)
+                ndcg5_scores.append(0.0)
+                hit1_scores.append(0)
+                continue
+            
+            # 정답의 순위 찾기
+            try:
+                rank = ranked_indices.index(ground_truth_idx) + 1  # 1-based rank
+            except ValueError:
+                rank = len(ranked_indices) + 1  # 순위에 없으면 최하위
+            
+            # MRR 계산 (1/rank)
+            mrr = 1.0 / rank if rank <= len(cans) else 0.0
+            mrr_scores.append(mrr)
+            
+            # HIT@1 계산
+            hit1 = 1 if rank == 1 else 0
+            hit1_scores.append(hit1)
+            
+            # nDCG@5 계산
+            k = min(5, len(cans))
+            dcg = 0.0
+            for j in range(min(k, len(ranked_indices))):
+                idx = ranked_indices[j]
+                if idx == ground_truth_idx:
+                    # 정답이 k위 안에 있으면 relevance=1, 아니면 0
+                    dcg = 1.0 / np.log2(j + 2)  # j+2 because rank is 1-based
+                    break
+            
+            # Ideal DCG (정답이 1위에 있는 경우)
+            idcg = 1.0 / np.log2(2)  # 1.0 / log2(2) = 1.0
+            
+            ndcg5 = dcg / idcg if idcg > 0 else 0.0
+            ndcg5_scores.append(ndcg5)
+        
+        avg_mrr = np.mean(mrr_scores) if mrr_scores else 0.0
+        avg_ndcg5 = np.mean(ndcg5_scores) if ndcg5_scores else 0.0
+        avg_hit1 = np.mean(hit1_scores) if hit1_scores else 0.0
+        
+        return avg_mrr, avg_ndcg5, avg_hit1
+    
     def calculate_hr1(self,eval_content):
         correct_num=0
         valid_num=0

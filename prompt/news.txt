@@ -1,4 +1,4 @@
-This user has read [HistoryHere] in the previous. Please predict the next news article this user will read. Choose ONLY ONE answer from the following news titles: [CansHere]. You must output exactly one news title from the list. Answer: 
-This user has read [HistoryHere] in the previous. Given the following news titles: [CansHere], recommend EXACTLY ONE news article for this user to read next. Output only the news title, nothing else. The news title you recommend is: 
-The reading history of this user is: [HistoryHere]. Recommend EXACTLY ONE next news article from the following news title set: [CansHere]. You must output only one news title from the list, nothing else. Recommendation:
+This user has read [HistoryHere] in the previous. Please rank the following news titles in order of relevance for this user to read next: [CansHere]. Output the ranked list of news titles, one per line, from most relevant to least relevant. Ranking:
+This user has read [HistoryHere] in the previous. Rank the following news titles [CansHere] from most to least relevant for this user. Output each news title on a separate line in ranked order. Ranking:
+The reading history of this user is: [HistoryHere]. Rank the following news titles [CansHere] by relevance for this user, from most relevant to least relevant. Output one news title per line in order. Ranking:
 

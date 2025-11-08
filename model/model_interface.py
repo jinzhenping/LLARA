@@ -60,6 +60,8 @@ class MInterface(pl.LightningModule):
         return outputs
 
     def training_step(self, batch, batch_idx):
+        # 모델을 학습 모드로 설정
+        self.llama_model.train()
         if self.scheduler:
             self.scheduler.step(self.trainer.global_step, self.current_epoch, self.trainer.max_steps)
         if batch["flag"]:
@@ -213,8 +215,7 @@ class MInterface(pl.LightningModule):
             device_map=None  # CPU에 로드
         )
         self.llama_model.resize_token_embeddings(len(self.llama_tokenizer))
-        # 모델을 평가 모드로 설정하고 CPU에 명시적으로 배치
-        self.llama_model.eval()
+        # 모델을 CPU에 명시적으로 배치 (학습 모드는 나중에 설정)
         self.llama_model = self.llama_model.to('cpu')
         
         # 메모리 정리
@@ -249,14 +250,23 @@ class MInterface(pl.LightningModule):
                 # 메모리 정리
                 torch.cuda.empty_cache() if torch.cuda.is_available() else None
                 # PEFT 적용 후 bfloat16으로 변환 (메모리 절약)
+                # LoRA 파라미터는 float32로 유지하고, base_model만 bfloat16으로 변환
                 if hasattr(self.llama_model, 'base_model'):
                     # PEFT 모델의 base_model만 bfloat16으로 변환
                     for name, param in self.llama_model.base_model.named_parameters():
                         if not param.requires_grad:
                             param.data = param.data.to(torch.bfloat16)
+                    # LoRA 파라미터는 float32로 유지 (학습을 위해)
+                    for name, param in self.llama_model.named_parameters():
+                        if param.requires_grad:
+                            # LoRA 파라미터는 float32로 유지
+                            param.data = param.data.to(torch.float32)
                 else:
                     self.llama_model = self.llama_model.to(torch.bfloat16)
+            # 학습 가능한 파라미터 확인
             self.llama_model.print_trainable_parameters()
+            # 학습 모드로 설정 (LoRA 파라미터가 학습 가능하도록)
+            self.llama_model.train()
         elif self.hparams.llm_tuning == 'freeze':
             # freeze 모드에서는 bfloat16으로 변환
             self.llama_model = self.llama_model.to(torch.bfloat16)

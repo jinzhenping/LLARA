@@ -442,10 +442,25 @@ class MInterface(pl.LightningModule):
             raise RuntimeError(f"추천 모델 로딩 실패: {rec_model_path}\n에러: {str(e)}")
 
     def encode_items(self, seq):
+        # item ID를 모델의 vocab size 범위 내로 클리핑
+        # SASRec 모델의 item_embeddings는 item_num + 1 크기 (0부터 item_num까지)
+        max_item_id = self.rec_model.item_num  # padding_item_id와 동일
+        
+        # 범위를 벗어나는 item ID가 있는지 확인
+        if torch.any(seq > max_item_id):
+            # 경고는 처음 몇 번만 출력
+            if not hasattr(self, '_warned_item_id_clip'):
+                max_found = torch.max(seq).item()
+                print(f"Warning: Found item IDs exceeding model vocab size. Max item ID in data: {max_found}, Model vocab size: {max_item_id + 1}. Clipping to valid range.")
+                self._warned_item_id_clip = True
+        
+        # 0부터 item_num까지 클리핑 (item_embeddings는 item_num + 1 크기)
+        seq_clipped = torch.clamp(seq, min=0, max=max_item_id)
+        
         if self.hparams.rec_embed=="SASRec":
-            item_rec_embs=self.rec_model.cacu_x(seq)
+            item_rec_embs=self.rec_model.cacu_x(seq_clipped)
         elif self.hparams.rec_embed in ['Caser','GRU']:
-            item_rec_embs=self.rec_model.item_embeddings(seq)
+            item_rec_embs=self.rec_model.item_embeddings(seq_clipped)
         item_txt_embs=self.projector(item_rec_embs)
         return item_txt_embs
     

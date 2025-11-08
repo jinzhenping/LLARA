@@ -6,7 +6,7 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
     --batch_size 1 \
     --num_workers 0 \
     --lr 1e-3 \
-    --accumulate_grad_batches 64 \
+    --accumulate_grad_batches 128 \
     --max_epochs 10 \
     --check_val_every_n_epoch 1 \
     --precision bf16 \
@@ -20,8 +20,8 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
     --output_dir ./output/mind/ \
     --rec_embed SASRec \
     --llm_tuning lora \
-    --lora_r 8 \
-    --lora_alpha 32 \
+    --lora_r 4 \
+    --lora_alpha 16 \
     --lora_dropout 0.1 \
     --mode train
 

@@ -70,7 +70,8 @@ class TrainCollater:
                 inputs_pair,
                 return_tensors="pt",
                 padding="longest",
-                truncation=False,
+                truncation=True,
+                max_length=512,  # 최대 길이 제한으로 메모리 절약
                 add_special_tokens=True,
                 return_attention_mask=True,
                 return_token_type_ids=True)
@@ -87,7 +88,8 @@ class TrainCollater:
                 inputs_text,
                 return_tensors="pt",
                 padding="longest",
-                truncation=False,
+                truncation=True,
+                max_length=512,  # 최대 길이 제한으로 메모리 절약
                 add_special_tokens=True,
                 return_attention_mask=True)
             cans_name=[sample['cans_name'] for sample in batch]

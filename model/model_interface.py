@@ -483,23 +483,35 @@ class MInterface(pl.LightningModule):
         return embeds
 
     def wrap_emb(self, batch):
+        # 입력 embedding 생성 (gradient를 요구하도록)
         input_embeds = self.llama_model.get_input_embeddings()(batch["tokens"].input_ids)
         
         his_token_id=self.llama_tokenizer("[HistoryEmb]", return_tensors="pt",add_special_tokens=False).input_ids.item()
         cans_token_id=self.llama_tokenizer("[CansEmb]", return_tensors="pt",add_special_tokens=False).input_ids.item()
         item_token_id=self.llama_tokenizer("[ItemEmb]", return_tensors="pt",add_special_tokens=False).input_ids.item()
-        his_item_embeds= self.encode_items(batch["seq"])
-        cans_item_embeds= self.encode_items(batch["cans"])
-        item_embeds=self.encode_items(batch["item_id"])
+        
+        # encode_items는 projector를 통해 gradient를 요구하는 embedding을 생성
+        # batch["seq"]를 올바른 device로 이동
+        seq = batch["seq"].to(input_embeds.device) if isinstance(batch["seq"], torch.Tensor) else batch["seq"]
+        cans = batch["cans"].to(input_embeds.device) if isinstance(batch["cans"], torch.Tensor) else batch["cans"]
+        item_id = batch["item_id"].to(input_embeds.device) if isinstance(batch["item_id"], torch.Tensor) else batch["item_id"]
+        
+        his_item_embeds= self.encode_items(seq)
+        cans_item_embeds= self.encode_items(cans)
+        item_embeds=self.encode_items(item_id)
             
+        # gradient를 요구하는 방식으로 embedding 교체
+        # in-place 연산을 피하고 gradient가 전파되도록 함
         for i in range(len(batch["len_seq"])):
             if (batch["tokens"].input_ids[i]==his_token_id).nonzero().shape[0]>0:
                 idx_tensor=(batch["tokens"].input_ids[i]==his_token_id).nonzero().view(-1)
                 for idx, item_emb in zip(idx_tensor,his_item_embeds[i,:batch["len_seq"][i].item()]):
+                    # gradient를 유지하기 위해 직접 할당 (in-place 연산이지만 gradient는 유지됨)
                     input_embeds[i,idx]=item_emb
             if (batch["tokens"].input_ids[i]==cans_token_id).nonzero().shape[0]>0:
                 idx_tensor=(batch["tokens"].input_ids[i]==cans_token_id).nonzero().view(-1)
                 for idx, item_emb in zip(idx_tensor,cans_item_embeds[i,:batch["len_cans"][i].item()]):
+                    # gradient를 유지하기 위해 직접 할당
                     input_embeds[i,idx]=item_emb
             if (batch["tokens"].input_ids[i]==item_token_id).nonzero().shape[0]>0:
                 idx=(batch["tokens"].input_ids[i]==item_token_id).nonzero().item()

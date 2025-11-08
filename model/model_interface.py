@@ -292,7 +292,10 @@ class MInterface(pl.LightningModule):
         except:
             raise ValueError(
                 f'Invalid Module File Name or Invalid Class Name {name}.{camel_name}!')
-        self.projector = self.instancialize(Model, rec_size=self.hparams.rec_size, llm_size=self.llama_model.config.hidden_size)
+        # 실제 rec_size 사용 (모델에서 확인한 값)
+        actual_rec_size = getattr(self, 'actual_rec_size', self.hparams.rec_size)
+        print(f"Using rec_size: {actual_rec_size} for projector")
+        self.projector = self.instancialize(Model, rec_size=actual_rec_size, llm_size=self.llama_model.config.hidden_size)
 
     def instancialize(self, Model, **other_args):
         class_args = inspect.getargspec(Model.__init__).args[1:]
@@ -364,15 +367,23 @@ class MInterface(pl.LightningModule):
                         
                         # 나머지는 strict=False로 로드 (호환되는 것만)
                         self.rec_model.load_state_dict(new_state_dict, strict=False)
+                        # 실제 hidden_size를 저장하여 projector에서 사용
+                        self.actual_rec_size = hidden_size
                         print(f"Warning: 원본 SASRec 구조를 사용합니다. 일부 레이어만 로드됩니다.")
                         print(f"로드된 키: {list(new_state_dict.keys())}")
+                        print(f"Detected rec_size (hidden_size) from model: {hidden_size}")
                     else:
                         # 현재 구조와 동일한 경우
                         # item_num은 padding_item_id + 1로 추정
                         item_num = self.hparams.padding_item_id + 1
                         # state_size는 보통 50 (코드에서 max_len=50 사용)
                         state_size = 50
-                        hidden_size = self.hparams.rec_size
+                        # state_dict에서 실제 hidden_size 확인
+                        if "item_embeddings.weight" in loaded:
+                            hidden_size = loaded["item_embeddings.weight"].shape[1]
+                        else:
+                            # 기본값 사용
+                            hidden_size = self.hparams.rec_size
                         dropout = 0.2  # 기본값
                         device = torch.device('cpu')
                         
@@ -384,6 +395,9 @@ class MInterface(pl.LightningModule):
                             device=device
                         )
                         self.rec_model.load_state_dict(loaded, strict=False)
+                        # 실제 hidden_size를 저장하여 projector에서 사용
+                        self.actual_rec_size = hidden_size
+                        print(f"Detected rec_size (hidden_size) from model: {hidden_size}")
                 elif self.hparams.rec_embed == "Caser":
                     item_num = self.hparams.padding_item_id + 1
                     hidden_size = self.hparams.rec_size
@@ -413,6 +427,12 @@ class MInterface(pl.LightningModule):
             else:
                 # 모델 객체인 경우
                 self.rec_model = loaded
+                # 모델 객체에서 hidden_size 확인
+                if hasattr(self.rec_model, 'hidden_size'):
+                    self.actual_rec_size = self.rec_model.hidden_size
+                    print(f"Detected rec_size (hidden_size) from model object: {self.actual_rec_size}")
+                else:
+                    self.actual_rec_size = self.hparams.rec_size
             
             self.rec_model.eval()
             for name, param in self.rec_model.named_parameters():

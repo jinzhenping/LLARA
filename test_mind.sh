@@ -20,5 +20,5 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
     --lora_alpha 32 \
     --lora_dropout 0.1 \
     --mode test \
-    --ckpt_path /path/to/checkpoint.ckpt
+    --ckpt_path ./checkpoints/mind/last.ckpt
 

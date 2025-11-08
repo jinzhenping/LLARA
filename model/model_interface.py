@@ -242,6 +242,10 @@ class MInterface(pl.LightningModule):
                     self.llama_model = self.llama_model.to(torch.float32)
                 # PEFT 적용 (모델이 이미 CPU에 있고 float32 dtype)
                 self.llama_model = get_peft_model(self.llama_model, peft_config)
+                # Gradient checkpointing 활성화 (PEFT 적용 후)
+                if hasattr(self.llama_model, 'gradient_checkpointing_enable'):
+                    self.llama_model.gradient_checkpointing_enable()
+                    print("Gradient checkpointing enabled for PEFT model")
                 # 메모리 정리
                 torch.cuda.empty_cache() if torch.cuda.is_available() else None
                 # PEFT 적용 후 bfloat16으로 변환 (메모리 절약)

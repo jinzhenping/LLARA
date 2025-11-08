@@ -16,8 +16,8 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
     --output_dir ./output/mind/ \
     --rec_embed SASRec \
     --llm_tuning lora \
-    --lora_r 8 \
-    --lora_alpha 32 \
+    --lora_r 4 \
+    --lora_alpha 16 \
     --lora_dropout 0.1 \
     --mode test \
     --ckpt_path ./checkpoints/mind/last.ckpt

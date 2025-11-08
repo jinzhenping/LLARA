@@ -124,7 +124,9 @@ class DInterface(pl.LightningDataModule):
         self.trainset = self.instancialize(stage='train')
         self.valset = self.instancialize(stage='val')
         self.testset = self.instancialize(stage='test')
-        self.max_steps = self.max_epochs*(len(self.trainset)//self.batch_size)//self.num_workers
+        # num_workers가 0인 경우를 처리
+        divisor = max(self.num_workers, 1)
+        self.max_steps = self.max_epochs*(len(self.trainset)//self.batch_size)//divisor
 
     def train_dataloader(self):
         return DataLoader(self.trainset,

@@ -26,9 +26,11 @@ class MindData(data.Dataset):
         next_item = temp['next']
         
         # 세 번째 컬럼에 저장된 후보 사용 (negative sampling 대신)
-        # 원본 순서 그대로 사용 (첫 번째 항목이 정답)
+        # 모든 단계에서 후보 순서를 랜덤하게 섞어서 정답 위치를 숨김
         if 'candidates' in temp.index and isinstance(temp['candidates'], list) and len(temp['candidates']) > 0:
             candidates = temp['candidates'].copy()
+            # 후보 순서를 랜덤하게 섞기 (정답 위치를 숨기기 위해)
+            random.shuffle(candidates)
         else:
             # fallback: 기존 방식 (데이터에 candidates가 없는 경우)
             candidates = self.negative_sampling(temp['seq_unpad'], next_item)

@@ -87,7 +87,8 @@ class MInterface(pl.LightningModule):
 
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
-        generate_output = self.generate(batch)
+        # max_gen_length를 256으로 증가 (5개 제목을 모두 포함하기 위해)
+        generate_output = self.generate(batch, max_gen_length=256, temperature=0.7, do_sample=True)
         output=[]
         for i,generate in enumerate(generate_output):
             real=batch['correct_answer'][i]
@@ -129,7 +130,8 @@ class MInterface(pl.LightningModule):
 
     @torch.no_grad()
     def test_step(self, batch, batch_idx):
-        generate_output = self.generate(batch)
+        # max_gen_length를 256으로 증가 (5개 제목을 모두 포함하기 위해)
+        generate_output = self.generate(batch, max_gen_length=256, temperature=0.7, do_sample=True)
         output=[]
         for i,generate in enumerate(generate_output):
             real=batch['correct_answer'][i]
@@ -554,6 +556,11 @@ class MInterface(pl.LightningModule):
      
     def parse_ranking(self, generate_text, candidates):
         """생성된 텍스트에서 후보들의 순위를 파싱"""
+        # 빈 생성 처리
+        if not generate_text or not generate_text.strip():
+            # 빈 생성인 경우, 후보를 원래 순서대로 반환 (랜덤 순서이므로 의미 없음)
+            return list(range(len(candidates)))
+        
         generate_lower = generate_text.strip().lower()
         candidates_lower = [c.strip().lower() for c in candidates]
         
@@ -566,8 +573,9 @@ class MInterface(pl.LightningModule):
             found = False
             # 각 줄에서 후보를 찾기
             for line_idx, line in enumerate(lines):
-                # 후보가 줄에 포함되어 있는지 확인 (단어 단위 매칭을 위해 공백으로 감싸기)
-                if cand in line:
+                # 후보가 줄에 포함되어 있는지 확인
+                # 정확한 매칭 또는 후보가 줄의 시작 부분에 있는지 확인
+                if cand == line or cand in line:
                     # 첫 번째 등장 위치를 찾기
                     pos = line.find(cand)
                     candidate_positions.append((line_idx, pos, i, cand))

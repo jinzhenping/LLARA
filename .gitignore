@@ -5,3 +5,4 @@ output/
 *.df
 __pycache__
 ref
+mind_new/

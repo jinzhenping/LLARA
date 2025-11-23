@@ -72,6 +72,6 @@ Test LLaRA with a single A100 GPU on LastFM dataset:
 sh test_lastfm.sh
 ```
 
-
+python preprocess_mind_new.py
 sh train_mind.sh
 sh test_mind.sh

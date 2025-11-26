@@ -10,6 +10,19 @@ import torch
 import argparse
 from transformers import LlamaForCausalLM, LlamaTokenizer
 import os
+import warnings
+
+# transformers 경고 필터링
+import logging
+warnings.filterwarnings("ignore", message=".*overflowing tokens.*")
+warnings.filterwarnings("ignore", message=".*longest_first.*")
+warnings.filterwarnings("ignore", message=".*sequence pairs.*")
+warnings.filterwarnings("ignore", category=UserWarning, module="transformers")
+warnings.filterwarnings("ignore", category=UserWarning)
+
+# transformers 로거 레벨 조정
+logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)
+logging.getLogger("transformers").setLevel(logging.ERROR)
 
 
 

@@ -10,6 +10,19 @@ from data.data_interface import DInterface
 from recommender.A_SASRec_final_bce_llm import SASRec, Caser, GRU
 from SASRecModules_ori import *
 from transformers import LlamaForCausalLM, LlamaTokenizer
+import warnings
+import logging
+
+# transformers 경고 및 로깅 필터링
+warnings.filterwarnings("ignore", message=".*overflowing tokens.*")
+warnings.filterwarnings("ignore", message=".*longest_first.*")
+warnings.filterwarnings("ignore", message=".*sequence pairs.*")
+warnings.filterwarnings("ignore", category=UserWarning, module="transformers")
+warnings.filterwarnings("ignore", category=UserWarning)
+
+# transformers 로거 레벨 조정
+logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)
+logging.getLogger("transformers").setLevel(logging.ERROR)
 
 def load_callbacks(args):
     callbacks = []

@@ -156,13 +156,11 @@ def create_sequences_from_behaviors_new(behaviors_file='mind_new/behaviors_new.t
                 'next_item': next_item
             })
     
-    if padding_item_id is None:
-        padding_item_id = max(all_news_ids) + 1 if all_news_ids else 130319
-    
     print(f"Found {len(unique_users)} unique users")
-    print(f"Padding item ID: {padding_item_id}")
     print(f"Total unique news items: {len(all_news_ids)}")
     print(f"Total sessions: {len(session_data_raw)}")
+    
+    # padding_item_id는 이미 main에서 설정되었으므로 여기서는 사용하지 않음
     
     # 시퀀스 데이터 생성
     session_data = []
@@ -195,7 +193,7 @@ def create_sequences_from_behaviors_new(behaviors_file='mind_new/behaviors_new.t
     
     session_df = pd.DataFrame(session_data)
     print(f"Created {len(session_df)} sessions from behaviors_new.tsv")
-    return session_df, padding_item_id, all_news_ids
+    return session_df
 
 def create_sequences(behaviors_file='mind_new/behaviors_194_users.tsv', news_id2name=None, padding_item_id=None, min_seq_len=3, max_seq_len=50):
     """behaviors_194_users.tsv를 읽어서 시퀀스 데이터 생성
@@ -309,6 +307,11 @@ def add_negative_samples(session_df, news_id2name, cans_num=10, use_existing_can
     use_existing_candidates=True: 이미 candidates가 있으면 그대로 사용 (테스트/검증용)
     use_existing_candidates=False: negative sampling 수행 (학습용)
     """
+    # session_df가 tuple인 경우 첫 번째 요소만 사용
+    if isinstance(session_df, tuple):
+        session_df = session_df[0]
+        print("Warning: session_df was a tuple, using first element")
+    
     if use_existing_candidates:
         # 이미 candidates가 있는 경우 (세 번째 컬럼에서 가져온 경우)
         # 학습 시에만 negative sampling 수행
@@ -440,6 +443,15 @@ def main():
             max_seq_len=50,
             num_users=args.num_users
         )
+        
+        # train_df_new가 DataFrame인지 확인
+        if not isinstance(train_df_new, pd.DataFrame):
+            print(f"Error: train_df_new is not a DataFrame. Type: {type(train_df_new)}")
+            if isinstance(train_df_new, tuple):
+                print(f"  Tuple length: {len(train_df_new)}")
+                train_df_new = train_df_new[0]  # 첫 번째 요소만 사용
+            else:
+                return
         
         # Negative sampling 적용
         print("\nApplying negative sampling to additional training data...")

@@ -73,5 +73,6 @@ sh test_lastfm.sh
 ```
 
 python preprocess_mind_new.py
+python preprocess_mind_new.py --num_users 1000
 sh train_mind.sh
 sh test_mind.sh

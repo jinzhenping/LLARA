@@ -1,6 +1,6 @@
 CUDA_VISIBLE_DEVICES=0 python main.py \
     --dataset mind_data \
-    --data_dir data/ref/mind_new \
+    --data_dir data/ref/mind_194_users \
     --model_name mlp_projector \
     --loss lm \
     --batch_size 1 \

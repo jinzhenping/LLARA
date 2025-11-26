@@ -9,7 +9,7 @@ import os.path as op
 from collections import defaultdict
 import random
 
-def load_news_mapping(news_file='mind_new/news.tsv'):
+def load_news_mapping(news_file='mind_new/news.tsv', behaviors_file=None):
     """뉴스 ID를 뉴스 제목으로 매핑하는 딕셔너리 생성"""
     print("Loading news mapping...")
     news_df = pd.read_csv(news_file, sep='\t', header=None, on_bad_lines='skip')
@@ -47,6 +47,26 @@ def load_news_mapping(news_file='mind_new/news.tsv'):
             continue
     
     print(f"Loaded {len(news_id2name)} news items")
+    
+    # behaviors_file이 제공된 경우, 사용되는 뉴스 ID 정보 출력
+    if behaviors_file:
+        used_news_ids = set()
+        try:
+            with open(behaviors_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    parts = line.strip().split('\t')
+                    if len(parts) >= 2:
+                        seq_str = parts[1].strip()
+                        for nid_str in seq_str.split():
+                            nid = parse_news_id(nid_str.strip())
+                            if nid is not None:
+                                used_news_ids.add(nid)
+            matched = len(set(news_id2name.keys()) & used_news_ids)
+            print(f"Found {len(used_news_ids)} unique news IDs in behaviors file")
+            print(f"Matched {matched} news items that are used in behaviors file")
+        except Exception as e:
+            print(f"Warning: Could not scan behaviors file: {e}")
+    
     return news_id2name, news_id2idx
 
 def parse_news_id(news_id_str):
@@ -61,9 +81,10 @@ def parse_news_id(news_id_str):
     except:
         return None
 
-def create_sequences(behaviors_file='mind_new/behaviors_new.tsv', news_id2name=None, padding_item_id=None, min_seq_len=3, max_seq_len=50):
-    """behaviors_new.tsv를 읽어서 시퀀스 데이터 생성"""
-    print("Loading behaviors_new.tsv...")
+def create_sequences(behaviors_file='mind_new/behaviors_194_users.tsv', news_id2name=None, padding_item_id=None, min_seq_len=3, max_seq_len=50):
+    """behaviors_194_users.tsv를 읽어서 시퀀스 데이터 생성 (첫 번째, 두 번째 컬럼만 사용)"""
+    print(f"Loading {behaviors_file}...")
+    print("Using only first and second columns (user_id and history sequence)")
     
     # 모든 뉴스 ID 수집하여 padding_item_id 결정
     all_news_ids = set()
@@ -71,17 +92,17 @@ def create_sequences(behaviors_file='mind_new/behaviors_new.tsv', news_id2name=N
     
     with open(behaviors_file, 'r', encoding='utf-8') as f:
         for line_idx, line in enumerate(f):
-            if line_idx % 10000 == 0:
+            if line_idx % 1000 == 0 and line_idx > 0:
                 print(f"Processing line {line_idx}...")
             
             parts = line.strip().split('\t')
             if len(parts) < 2:
                 continue
             
-            user_id = parts[0]
-            seq_str = parts[1]  # 공백으로 구분된 뉴스 ID 리스트
+            user_id = parts[0].strip()
+            seq_str = parts[1].strip()  # 두 번째 컬럼: 공백으로 구분된 뉴스 ID 리스트 (히스토리)
             
-            # 시퀀스 파싱
+            # 시퀀스 파싱 (두 번째 컬럼만 사용)
             seq_ids = []
             for nid_str in seq_str.split():
                 nid = parse_news_id(nid_str.strip())
@@ -219,12 +240,12 @@ def save_dataframes(train_df, val_df, test_df, news_id2name, output_dir='data/re
 
 def main():
     # 파일 경로 설정
-    behaviors_file = 'mind_new/behaviors_new.tsv'
+    behaviors_file = 'mind_new/behaviors_194_users.tsv'  # 첫 번째, 두 번째 컬럼만 사용
     news_file = 'mind_new/news.tsv'
-    output_dir = 'data/ref/mind_new'
+    output_dir = 'data/ref/mind_194_users'
     
-    # 뉴스 매핑 로드
-    news_id2name, news_id2idx = load_news_mapping(news_file)
+    # 뉴스 매핑 로드 (behaviors_file 정보도 전달하여 사용되는 ID만 로드)
+    news_id2name, news_id2idx = load_news_mapping(news_file, behaviors_file)
     
     if len(news_id2name) == 0:
         print("Error: No news items loaded. Check the news.tsv file format.")
@@ -264,7 +285,7 @@ def main():
     print(f"Output directory: {output_dir}")
     print(f"\nNext steps:")
     print(f"1. Update train_mind.sh to use data_dir='{output_dir}'")
-    print(f"2. Update padding_item_id in train_mind.sh if needed (current: {padding_item_id})")
+    print(f"2. Update padding_item_id in main.py if needed (current: {padding_item_id})")
     print(f"3. Run: sh train_mind.sh")
 
 if __name__ == '__main__':

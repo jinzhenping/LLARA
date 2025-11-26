@@ -137,6 +137,10 @@ if __name__ == '__main__':
         args.padding_item_id = 3581
     elif 'lastfm' in args.data_dir:
         args.padding_item_id = 4606
+    elif 'mind_194_users' in args.data_dir:
+        # mind_194_users의 경우 전처리 스크립트에서 계산된 padding_item_id 사용
+        # 전처리 스크립트 실행 후 출력된 값을 여기에 설정
+        args.padding_item_id = 130379  # 전처리 스크립트에서 출력된 값으로 변경 필요
     elif 'mind_new' in args.data_dir:
         # mind_new의 경우 전처리 스크립트에서 계산된 padding_item_id 사용
         # 전처리 스크립트 실행 후 출력된 값을 여기에 설정하거나

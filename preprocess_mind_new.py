@@ -82,9 +82,13 @@ def parse_news_id(news_id_str):
         return None
 
 def create_sequences(behaviors_file='mind_new/behaviors_194_users.tsv', news_id2name=None, padding_item_id=None, min_seq_len=3, max_seq_len=50):
-    """behaviors_194_users.tsv를 읽어서 시퀀스 데이터 생성 (첫 번째, 두 번째 컬럼만 사용)"""
+    """behaviors_194_users.tsv를 읽어서 시퀀스 데이터 생성
+    - 첫 번째 컬럼: 사용자 ID
+    - 두 번째 컬럼: 사용자 히스토리
+    - 세 번째 컬럼: 5개 후보 (첫 번째가 정답)
+    """
     print(f"Loading {behaviors_file}...")
-    print("Using only first and second columns (user_id and history sequence)")
+    print("Using columns: 1=user_id, 2=history, 3=candidates (first candidate is ground truth)")
     
     # 모든 뉴스 ID 수집하여 padding_item_id 결정
     all_news_ids = set()
@@ -96,13 +100,15 @@ def create_sequences(behaviors_file='mind_new/behaviors_194_users.tsv', news_id2
                 print(f"Processing line {line_idx}...")
             
             parts = line.strip().split('\t')
-            if len(parts) < 2:
+            if len(parts) < 3:
+                # 세 번째 컬럼이 없는 경우 스킵
                 continue
             
             user_id = parts[0].strip()
             seq_str = parts[1].strip()  # 두 번째 컬럼: 공백으로 구분된 뉴스 ID 리스트 (히스토리)
+            candidates_str = parts[2].strip()  # 세 번째 컬럼: 공백으로 구분된 5개 후보 (첫 번째가 정답)
             
-            # 시퀀스 파싱 (두 번째 컬럼만 사용)
+            # 히스토리 시퀀스 파싱
             seq_ids = []
             for nid_str in seq_str.split():
                 nid = parse_news_id(nid_str.strip())
@@ -110,12 +116,30 @@ def create_sequences(behaviors_file='mind_new/behaviors_194_users.tsv', news_id2
                     seq_ids.append(nid)
                     all_news_ids.add(nid)
             
+            # 후보 파싱 (세 번째 컬럼)
+            candidate_ids = []
+            for nid_str in candidates_str.split():
+                nid = parse_news_id(nid_str.strip())
+                if nid is not None:
+                    candidate_ids.append(nid)
+                    all_news_ids.add(nid)
+            
             if len(seq_ids) < min_seq_len:
                 continue
             
+            if len(candidate_ids) == 0:
+                # 후보가 없는 경우 스킵
+                continue
+            
+            # 첫 번째 후보가 정답
+            next_item = candidate_ids[0]
+            candidates = candidate_ids  # 5개 후보 전체
+            
             session_data_raw.append({
                 'user_id': user_id,
-                'seq_ids': seq_ids
+                'seq_ids': seq_ids,
+                'next_item': next_item,
+                'candidates': candidates
             })
     
     if padding_item_id is None:
@@ -125,32 +149,31 @@ def create_sequences(behaviors_file='mind_new/behaviors_194_users.tsv', news_id2
     print(f"Total unique news items: {len(all_news_ids)}")
     print(f"Total sessions: {len(session_data_raw)}")
     
-    # 시퀀스 데이터 생성 (마지막 아이템을 정답으로, 나머지를 히스토리로)
+    # 시퀀스 데이터 생성
     session_data = []
     
     for session in session_data_raw:
         seq_ids = session['seq_ids']
+        next_item = session['next_item']
+        candidates = session['candidates']
         
         if len(seq_ids) < min_seq_len:
             continue
         
-        # 마지막 아이템을 정답으로, 나머지를 히스토리로
-        history = seq_ids[:-1]
-        next_item = seq_ids[-1]
+        # 히스토리는 두 번째 컬럼 전체 사용
+        history = seq_ids
         
         # 모든 아이템이 news_id2name에 있는지 확인
         if next_item not in news_id2name:
             continue
         if not all(nid in news_id2name for nid in history):
             continue
+        if not all(cid in news_id2name for cid in candidates):
+            continue
         
         # 패딩 추가 (최대 길이 제한)
         history_padded = history[-max_seq_len:] + [padding_item_id] * max(0, max_seq_len - len(history))
         len_seq = min(len(history), max_seq_len)
-        
-        # 후보 생성: 정답 + 9개 랜덤 후보 (나중에 negative sampling으로 대체될 수 있음)
-        # 여기서는 일단 정답만 저장하고, 나중에 negative sampling 수행
-        candidates = [next_item]  # 일단 정답만, 나중에 negative sampling
         
         session_data.append({
             'user_id': session['user_id'],
@@ -158,15 +181,24 @@ def create_sequences(behaviors_file='mind_new/behaviors_194_users.tsv', news_id2
             'seq_unpad': history[-max_seq_len:],  # 최근 max_seq_len개만 사용
             'len_seq': len_seq,
             'next': next_item,
-            'candidates': candidates  # 나중에 negative sampling으로 채워짐
+            'candidates': candidates  # 세 번째 컬럼의 5개 후보 (첫 번째가 정답)
         })
     
     session_df = pd.DataFrame(session_data)
     print(f"Created {len(session_df)} sessions")
     return session_df, padding_item_id, all_news_ids
 
-def add_negative_samples(session_df, news_id2name, cans_num=10):
-    """각 세션에 negative sampling으로 후보 추가"""
+def add_negative_samples(session_df, news_id2name, cans_num=10, use_existing_candidates=True):
+    """각 세션에 negative sampling으로 후보 추가
+    use_existing_candidates=True: 이미 candidates가 있으면 그대로 사용 (테스트/검증용)
+    use_existing_candidates=False: negative sampling 수행 (학습용)
+    """
+    if use_existing_candidates:
+        # 이미 candidates가 있는 경우 (세 번째 컬럼에서 가져온 경우)
+        # 학습 시에만 negative sampling 수행
+        print("Candidates already exist from third column. Will use for test/val, negative sampling for train.")
+        return session_df
+    
     print("Adding negative samples...")
     
     all_item_ids = list(news_id2name.keys())
@@ -240,7 +272,7 @@ def save_dataframes(train_df, val_df, test_df, news_id2name, output_dir='data/re
 
 def main():
     # 파일 경로 설정
-    behaviors_file = 'mind_new/behaviors_194_users.tsv'  # 첫 번째, 두 번째 컬럼만 사용
+    behaviors_file = 'mind_new/behaviors_194_users.tsv'  # 컬럼 1: user_id, 컬럼 2: history, 컬럼 3: 5 candidates (첫 번째가 정답)
     news_file = 'mind_new/news.tsv'
     output_dir = 'data/ref/mind_194_users'
     
@@ -261,14 +293,18 @@ def main():
     )
     
     if len(session_df) == 0:
-        print("Error: No sessions created. Check the behaviors_new.tsv file format.")
+        print("Error: No sessions created. Check the behaviors_194_users.tsv file format.")
         return
     
-    # Negative sampling 추가
-    session_df = add_negative_samples(session_df, news_id2name, cans_num=10)
-    
-    # 데이터 분할
+    # 데이터 분할 (먼저 분할)
     train_df, val_df, test_df = split_data(session_df, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15)
+    
+    # 학습 데이터에만 negative sampling 적용 (테스트/검증은 세 번째 컬럼의 후보 사용)
+    print("\nApplying negative sampling to training data only...")
+    train_df = add_negative_samples(train_df, news_id2name, cans_num=10, use_existing_candidates=False)
+    
+    # 검증/테스트 데이터는 세 번째 컬럼의 후보 그대로 사용 (이미 candidates에 저장됨)
+    print("Validation and test data will use candidates from third column (first candidate is ground truth)")
     
     # 저장
     save_dataframes(train_df, val_df, test_df, news_id2name, output_dir)
@@ -276,12 +312,16 @@ def main():
     print(f"\n{'='*50}")
     print(f"Preprocessing complete!")
     print(f"{'='*50}")
-    print(f"Padding item ID: {padding_item_id}")
+    print(f"Input file: {behaviors_file}")
+    print(f"  - Column 1: user_id")
+    print(f"  - Column 2: history sequence")
+    print(f"  - Column 3: 5 candidates (first is ground truth)")
+    print(f"\nPadding item ID: {padding_item_id}")
     print(f"Total news items: {len(news_id2name)}")
     print(f"Total sessions: {len(session_df)}")
-    print(f"Train sessions: {len(train_df)}")
-    print(f"Val sessions: {len(val_df)}")
-    print(f"Test sessions: {len(test_df)}")
+    print(f"Train sessions: {len(train_df)} (with negative sampling)")
+    print(f"Val sessions: {len(val_df)} (using candidates from column 3)")
+    print(f"Test sessions: {len(test_df)} (using candidates from column 3)")
     print(f"Output directory: {output_dir}")
     print(f"\nNext steps:")
     print(f"1. Update train_mind.sh to use data_dir='{output_dir}'")

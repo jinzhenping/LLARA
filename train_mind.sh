@@ -4,7 +4,7 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
     --model_name mlp_projector \
     --loss lm \
     --batch_size 1 \
-    --num_workers 0 \
+    --num_workers 8 \
     --lr 1e-3 \
     --accumulate_grad_batches 128 \
     --max_epochs 10 \

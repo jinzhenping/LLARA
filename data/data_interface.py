@@ -74,7 +74,8 @@ class TrainCollater:
                 max_length=512,  # 최대 길이 제한으로 메모리 절약
                 add_special_tokens=True,
                 return_attention_mask=True,
-                return_token_type_ids=True)
+                return_token_type_ids=True,
+                return_overflowing_tokens=False)  # 경고 제거
             new_batch={"tokens":batch_tokens,
                        "seq":torch.stack([torch.tensor(sample['seq']) for sample in batch], dim=0),
                        "cans":torch.stack([torch.tensor(sample['cans']) for sample in batch], dim=0),
@@ -91,7 +92,8 @@ class TrainCollater:
                 truncation=True,
                 max_length=512,  # 최대 길이 제한으로 메모리 절약
                 add_special_tokens=True,
-                return_attention_mask=True)
+                return_attention_mask=True,
+                return_overflowing_tokens=False)  # 경고 제거
             cans_name=[sample['cans_name'] for sample in batch]
             new_batch={"tokens":batch_tokens,
                        "seq":torch.stack([torch.tensor(sample['seq']) for sample in batch], dim=0),

@@ -427,8 +427,17 @@ def main():
         print("Error: No sessions created. Check the behaviors_194_users.tsv file format.")
         return
     
-    # 데이터 분할 (먼저 분할)
-    train_df_194, val_df, test_df = split_data(session_df, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15)
+    # behaviors_194_users.tsv의 모든 데이터를 테스트 데이터로 사용
+    # 전체를 test로만 사용 (val은 일부만, train은 behaviors_new.tsv에서만)
+    print("\n" + "="*50)
+    print("Step 2.5: Using all behaviors_194_users.tsv data for test...")
+    print("="*50)
+    # 전체를 test로 사용하고, val은 일부만 (또는 test만 사용)
+    # 사용자 요청: 전체 194개를 테스트로 사용
+    test_df = session_df.copy()  # 전체를 테스트로
+    val_df = session_df.sample(frac=0.15, random_state=42).copy()  # 검증용으로 일부만 (선택사항)
+    train_df_194 = pd.DataFrame()  # 빈 DataFrame (behaviors_194_users.tsv에서는 학습 데이터 없음)
+    print(f"Test: {len(test_df)} (all data), Val: {len(val_df)} (subset for validation)")
     
     # behaviors_new.tsv에서 추가 학습 데이터 생성
     if args.num_users is not None and args.num_users > 0:
@@ -457,24 +466,19 @@ def main():
         print("\nApplying negative sampling to additional training data...")
         train_df_new = add_negative_samples(train_df_new, news_id2name, cans_num=10, use_existing_candidates=False)
         
-        # 기존 학습 데이터에도 negative sampling 적용
-        print("\nApplying negative sampling to original training data...")
-        train_df_194_processed = add_negative_samples(train_df_194, news_id2name, cans_num=10, use_existing_candidates=False)
-        
-        # 기존 학습 데이터와 합치기
-        print(f"\nCombining training data:")
-        print(f"  - Original (behaviors_194_users.tsv): {len(train_df_194_processed)} sessions")
-        print(f"  - Additional (behaviors_new.tsv, {args.num_users} users): {len(train_df_new)} sessions")
-        train_df = pd.concat([train_df_194_processed, train_df_new], ignore_index=True)
+        # behaviors_194_users.tsv에서는 학습 데이터가 없으므로 train_df_new만 사용
+        print(f"\nTraining data:")
+        print(f"  - From behaviors_new.tsv ({args.num_users} users): {len(train_df_new)} sessions")
+        train_df = train_df_new
         print(f"  - Total: {len(train_df)} sessions")
     else:
         print("\n" + "="*50)
         print("Step 3: Skipping behaviors_new.tsv (num_users not specified)")
         print("="*50)
-        # 기존 학습 데이터에 negative sampling 적용
-        print("\nApplying negative sampling to training data...")
-        train_df = add_negative_samples(train_df_194, news_id2name, cans_num=10, use_existing_candidates=False)
-        print(f"Using only behaviors_194_users.tsv training data: {len(train_df)} sessions")
+        print("WARNING: No training data! Please specify --num_users to add training data from behaviors_new.tsv")
+        # 빈 학습 데이터 (경고)
+        train_df = pd.DataFrame()
+        print(f"Training data: {len(train_df)} sessions (empty!)")
     
     # 검증/테스트 데이터는 세 번째 컬럼의 후보 그대로 사용 (이미 candidates에 저장됨)
     print("\nValidation and test data will use candidates from third column (first candidate is ground truth)")

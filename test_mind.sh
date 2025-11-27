@@ -3,7 +3,7 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
     --data_dir data/ref/mind_194_users \
     --model_name mlp_projector \
     --loss lm \
-    --batch_size 8 \
+    --batch_size 1 \
     --num_workers 8 \
     --precision bf16 \
     --accelerator gpu \

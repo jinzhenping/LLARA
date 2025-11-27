@@ -1,5 +1,5 @@
-This user has read [HistoryHere] in the previous. Please rank the following news titles in order of relevance for this user to read next: [CansHere]. Output ONLY the ranked list of news titles, one per line, from most relevant to least relevant. Do not write any explanation or article. Just list the titles. Ranking:
-This user has read [HistoryHere] in the previous. Rank the following news titles [CansHere] from most to least relevant for this user. Output ONLY each news title on a separate line in ranked order. Do not write any explanation. Ranking:
-The reading history of this user is: [HistoryHere]. Rank the following news titles [CansHere] by relevance for this user, from most relevant to least relevant. Output ONLY one news title per line in order. Do not write any article or explanation. Ranking:
-IMPORTANT: Output ONLY the news titles from the candidate list, one per line. Do NOT generate article content, explanations, or any text other than the news titles themselves. Just list the titles in ranked order.
+Rank these news titles by relevance: [CansHere]. Output ONLY titles, one per line. Ranking:
+List these news titles in order: [CansHere]. Output ONLY titles, one per line. Ranking:
+Rank: [CansHere]. Output ONLY titles, one per line. Ranking:
+IMPORTANT: Output ONLY news titles from [CansHere], one per line. NO articles, NO explanations, NO other text. Just titles. Ranking:
 

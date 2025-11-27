@@ -131,9 +131,11 @@ class MInterface(pl.LightningModule):
     @torch.no_grad()
     def test_step(self, batch, batch_idx):
         # max_gen_length를 256으로 증가 (5개 제목을 모두 포함하기 위해)
-        # temperature를 낮추고 repetition_penalty를 추가하여 순위 리스트 생성 개선
-        # temperature를 더 낮춰서 더 결정적인 출력 생성
-        generate_output = self.generate(batch, max_gen_length=256, temperature=0.1, do_sample=True, repetition_penalty=1.5)
+        # temperature를 매우 낮춰서 더 결정적인 출력 생성
+        # repetition_penalty를 높여서 반복 방지
+        # top_p와 top_k를 사용하여 더 집중된 생성
+        generate_output = self.generate(batch, max_gen_length=256, temperature=0.01, do_sample=True, 
+                                        repetition_penalty=2.0, top_p=0.9, top_k=50)
         output=[]
         for i,generate in enumerate(generate_output):
             real=batch['correct_answer'][i]

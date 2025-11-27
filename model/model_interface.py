@@ -40,21 +40,27 @@ class MInterface(pl.LightningModule):
         )
         return outputs
 
-    def generate(self, batch,temperature=0.8,do_sample=False,num_beams=1,max_gen_length=64,min_gen_length=1,repetition_penalty=1.0,length_penalty=1.0, num_return_sequences=1):
+    def generate(self, batch,temperature=0.8,do_sample=False,num_beams=1,max_gen_length=64,min_gen_length=1,repetition_penalty=1.0,length_penalty=1.0, num_return_sequences=1, top_p=None, top_k=None):
         input_embeds = self.wrap_emb(batch)
-        generate_ids = self.llama_model.generate(
-            inputs_embeds=input_embeds,
-            attention_mask=batch["tokens"].attention_mask,
-            temperature=temperature,
-            do_sample=do_sample,
-            num_beams=num_beams,
-            max_new_tokens=max_gen_length,
-            min_new_tokens=min_gen_length,
-            pad_token_id=self.llama_tokenizer.pad_token_id,
-            repetition_penalty=repetition_penalty,
-            length_penalty=length_penalty,
-            num_return_sequences=num_return_sequences
-            )
+        generate_kwargs = {
+            "inputs_embeds": input_embeds,
+            "attention_mask": batch["tokens"].attention_mask,
+            "temperature": temperature,
+            "do_sample": do_sample,
+            "num_beams": num_beams,
+            "max_new_tokens": max_gen_length,
+            "min_new_tokens": min_gen_length,
+            "pad_token_id": self.llama_tokenizer.pad_token_id,
+            "repetition_penalty": repetition_penalty,
+            "length_penalty": length_penalty,
+            "num_return_sequences": num_return_sequences
+        }
+        # top_p와 top_k는 선택적 파라미터
+        if top_p is not None:
+            generate_kwargs["top_p"] = top_p
+        if top_k is not None:
+            generate_kwargs["top_k"] = top_k
+        generate_ids = self.llama_model.generate(**generate_kwargs)
         output_text=self.llama_tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
         outputs=[text.strip() for text in output_text]
         return outputs

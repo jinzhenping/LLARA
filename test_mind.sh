@@ -1,6 +1,6 @@
 CUDA_VISIBLE_DEVICES=0 python main.py \
     --dataset mind_data \
-    --data_dir data/ref/mind_194_users \
+    --data_dir data/ref/mind \
     --model_name mlp_projector \
     --loss lm \
     --batch_size 4 \
@@ -11,14 +11,14 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
     --llm_path ./llama2-7b-hf \
     --rec_model_path ./SASRec.pth \
     --prompt_path ./prompt/news.txt \
-    --ckpt_dir ./checkpoints/mind_new_ranking/ \
-    --log_dir mind_new_ranking_logs \
-    --output_dir ./output/mind_new_ranking/ \
+    --ckpt_dir ./checkpoints/mind/ \
+    --log_dir mind_logs \
+    --output_dir ./output/mind/ \
     --rec_embed SASRec \
     --llm_tuning lora \
     --lora_r 4 \
     --lora_alpha 16 \
     --lora_dropout 0.1 \
     --mode test \
-    --ckpt_path ./checkpoints/mind_new_ranking/last.ckpt
+    --ckpt_path ./checkpoints/mind/last.ckpt
 

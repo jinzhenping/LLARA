@@ -17,6 +17,7 @@ CUDA_VISIBLE_DEVICES=1 python main.py \
     --prompt_path ./prompt/news.txt \
     --ckpt_dir ./checkpoints/mind/ \
     --log_dir mind_logs \
+    --log_file ./log/mind_logs/training.log \
     --output_dir ./output/mind/ \
     --rec_embed SASRec \
     --llm_tuning lora \

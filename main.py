@@ -1,4 +1,5 @@
 import os
+import sys
 import pytorch_lightning as pl
 from argparse import ArgumentParser
 from pytorch_lightning import Trainer
@@ -50,6 +51,32 @@ def load_callbacks(args):
     return callbacks
 
 def main(args):
+    # 로그 파일로 출력 리다이렉트 (선택적)
+    original_stdout = None
+    original_stderr = None
+    log_file_handle = None
+    if args.log_file:
+        log_dir = os.path.dirname(args.log_file) if os.path.dirname(args.log_file) else '.'
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        log_file_handle = open(args.log_file, 'w', encoding='utf-8')
+        # stdout과 stderr를 파일로 리다이렉트 (동시에 콘솔에도 출력)
+        original_stdout = sys.stdout
+        original_stderr = sys.stderr
+        class Tee:
+            def __init__(self, *files):
+                self.files = files
+            def write(self, obj):
+                for f in self.files:
+                    f.write(obj)
+                    f.flush()
+            def flush(self):
+                for f in self.files:
+                    f.flush()
+        sys.stdout = Tee(original_stdout, log_file_handle)
+        sys.stderr = Tee(original_stderr, log_file_handle)
+        print(f"Logging to {args.log_file}")
+    
     pl.seed_everything(args.seed)
     model = MInterface(**vars(args))
     if args.ckpt_path:
@@ -61,9 +88,13 @@ def main(args):
 
     args.max_steps=len(data_module.trainset) * args.max_epochs // (args.accumulate_grad_batches * args.batch_size)
 
-    logger = TensorBoardLogger(save_dir='./log/', name=args.log_dir)
+    # 로거 설정: TensorBoard와 CSV 모두 사용
+    tensorboard_logger = TensorBoardLogger(save_dir='./log/', name=args.log_dir)
+    csv_logger = CSVLogger(save_dir='./log/', name=args.log_dir)
+    loggers = [tensorboard_logger, csv_logger]
+    
     args.callbacks = load_callbacks(args)
-    args.logger = logger
+    args.logger = loggers
     if not os.path.exists(args.ckpt_dir):
         os.makedirs(args.ckpt_dir)
 
@@ -77,10 +108,18 @@ def main(args):
         print("Saving to {}".format(fig_path))
         model.hparams.lr=lr_finder.suggestion()
 
-    if args.mode == 'train':
-        trainer.fit(model=model, datamodule=data_module)
-    else:
-        trainer.test(model=model, datamodule=data_module)
+    try:
+        if args.mode == 'train':
+            trainer.fit(model=model, datamodule=data_module)
+        else:
+            trainer.test(model=model, datamodule=data_module)
+    finally:
+        # 로그 파일 닫기 및 원래 stdout/stderr 복원
+        if args.log_file and log_file_handle:
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
+            log_file_handle.close()
+            print(f"Log file saved to {args.log_file}")
 
 
 if __name__ == '__main__':
@@ -116,6 +155,7 @@ if __name__ == '__main__':
     parser.add_argument('--no_augment', action='store_true')
     parser.add_argument('--ckpt_dir', default='./checkpoints/', type=str)
     parser.add_argument('--log_dir', default='movielens_logs', type=str)
+    parser.add_argument('--log_file', default=None, type=str, help='Path to save training log output (stdout/stderr)')
     
     parser.add_argument('--rec_size', default=64, type=int)
     parser.add_argument('--padding_item_id', default=1682, type=int)

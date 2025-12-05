@@ -6,8 +6,8 @@ CUDA_VISIBLE_DEVICES=1 python main.py \
     --batch_size 8 \
     --num_workers 8 \
     --lr 1e-3 \
-    --accumulate_grad_batches 128 \
-    --max_epochs 10 \
+    --accumulate_grad_batches 8 \
+    --max_epochs 20 \
     --check_val_every_n_epoch 1 \
     --precision bf16 \
     --accelerator gpu \

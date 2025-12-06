@@ -207,20 +207,77 @@ def split_data_by_user(session_df, train_ratio=0.7, val_ratio=0.15):
         train_val_df = train_val_df.drop(columns=['next_from_candidates', 'has_candidates'], errors='ignore')
     
     # 학습/검증 데이터를 100% 사용하여 train/val로 분할
-    # 전체 세션을 train_ratio 비율로 나눔 (100% 사용)
-    n_total = len(train_val_df)
-    if n_total == 0:
-        train_df = pd.DataFrame()
-        val_df = pd.DataFrame()
+    # 각 사용자의 히스토리 시퀀스에서 마지막 아이템을 검증용으로, 나머지를 학습용으로
+    # 각 사용자는 한 줄(한 세션)만 있으므로, 각 세션의 히스토리를 분할
+    train_sessions = []
+    val_sessions = []
+    
+    # 각 행(세션)을 처리
+    for idx, row in train_val_df.iterrows():
+        user_id = row['user_id']
+        seq_unpad = row['seq_unpad']  # 히스토리 시퀀스 (리스트)
+        
+        if not isinstance(seq_unpad, list):
+            seq_unpad = list(seq_unpad) if hasattr(seq_unpad, '__iter__') else [seq_unpad]
+        
+        if len(seq_unpad) < 2:
+            # 히스토리가 너무 짧으면 모두 학습용으로
+            train_sessions.append(pd.DataFrame([row]))
+            continue
+        
+        # 히스토리에서 마지막 아이템을 검증용으로, 나머지를 학습용으로
+        # 학습용: 초기 아이템들 (마지막 2개 제외) → 마지막에서 두 번째 아이템 예측
+        # 검증용: 마지막 아이템 제외한 히스토리 → 마지막 아이템 예측
+        
+        # 예: [N1, N2, N3, N4, N5]
+        # 학습용: [N1, N2, N3] → N4 예측
+        # 검증용: [N1, N2, N3, N4] → N5 예측
+        
+        if len(seq_unpad) < 3:
+            # 히스토리가 너무 짧으면 모두 학습용으로
+            train_sessions.append(pd.DataFrame([row]))
+            continue
+        
+        # 학습용: 마지막 2개 아이템 제외한 히스토리 → 마지막에서 두 번째 아이템 예측
+        train_history = seq_unpad[:-2]
+        train_next = seq_unpad[-2]  # 마지막에서 두 번째 아이템이 정답
+        
+        # 검증용: 마지막 아이템 제외한 히스토리 → 마지막 아이템 예측
+        val_history = seq_unpad[:-1]  # 마지막 아이템 제외
+        val_next = seq_unpad[-1]  # 마지막 아이템이 정답
+        
+        # 학습용 세션 생성
+        train_row = row.copy()
+        train_row['seq_unpad'] = train_history
+        train_row['next'] = train_next
+        # 패딩 재계산
+        max_len = 50
+        padding_item_id = 130319  # 기본값, 필요시 row에서 가져올 수 있음
+        train_history_padded = train_history[-max_len:] + [padding_item_id] * max(0, max_len - len(train_history))
+        train_row['seq'] = train_history_padded
+        train_row['len_seq'] = min(len(train_history), max_len)
+        train_sessions.append(pd.DataFrame([train_row]))
+        
+        # 검증용 세션 생성
+        val_row = row.copy()
+        val_row['seq_unpad'] = val_history
+        val_row['next'] = val_next
+        # 패딩 재계산
+        val_history_padded = val_history[-max_len:] + [padding_item_id] * max(0, max_len - len(val_history))
+        val_row['seq'] = val_history_padded
+        val_row['len_seq'] = min(len(val_history), max_len)
+        val_sessions.append(pd.DataFrame([val_row]))
+    
+    # 리스트를 DataFrame으로 변환
+    if train_sessions:
+        train_df = pd.concat(train_sessions, ignore_index=True)
     else:
-        # 랜덤 셔플 (사용자별로 나누지 않고 전체적으로 분할)
-        train_val_df = train_val_df.sample(frac=1, random_state=42).reset_index(drop=True)
-        
-        n_train = max(1, int(n_total * train_ratio))
-        
-        # train_ratio 비율만큼은 train, 나머지는 val (100% 사용)
-        train_df = train_val_df[:n_train].copy()
-        val_df = train_val_df[n_train:].copy()
+        train_df = pd.DataFrame()
+    
+    if val_sessions:
+        val_df = pd.concat(val_sessions, ignore_index=True)
+    else:
+        val_df = pd.DataFrame()
     
     print(f"Train: {len(train_df)} sessions (using 100% of column 2), Val: {len(val_df)} sessions (using 100% of column 2), Test: {len(test_df)} sessions (using column 3)")
     

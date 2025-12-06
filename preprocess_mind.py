@@ -41,7 +41,10 @@ def parse_news_id(news_id_str):
     return int(news_id_str)
 
 def create_sequences(mind_file='MIND.tsv', news_id2name=None, padding_item_id=None):
-    """MIND.tsv를 읽어서 시퀀스 데이터 생성"""
+    """MIND.tsv를 읽어서 시퀀스 데이터 생성
+    - 학습/검증용: 두 번째 컬럼(히스토리)에서 마지막 아이템을 정답으로 사용
+    - 테스트용: 세 번째 컬럼(후보)의 데이터 사용
+    """
     print("Loading MIND.tsv...")
     df = pd.read_csv(mind_file, sep='\t', header=None)
     
@@ -55,8 +58,9 @@ def create_sequences(mind_file='MIND.tsv', news_id2name=None, padding_item_id=No
         
         # groundtruth에서 뉴스 ID 추출
         gt_str = str(row[2])
-        gt_ids = [parse_news_id(nid) for nid in gt_str.split()]
-        all_news_ids.update(gt_ids)
+        if pd.notna(gt_str) and str(gt_str).strip():
+            gt_ids = [parse_news_id(nid) for nid in str(gt_str).split()]
+            all_news_ids.update(gt_ids)
     
     if padding_item_id is None:
         padding_item_id = max(all_news_ids) + 1
@@ -70,43 +74,64 @@ def create_sequences(mind_file='MIND.tsv', news_id2name=None, padding_item_id=No
     for idx, row in df.iterrows():
         user_id = int(row[0])
         seq_str = str(row[1])
-        gt_str = str(row[2])
+        gt_str = str(row[2]) if pd.notna(row[2]) else ""
         
         # 시퀀스 파싱
         seq_ids = [parse_news_id(nid) for nid in seq_str.split()]
         if len(seq_ids) < 3:  # 최소 길이 체크
             continue
         
-        # Groundtruth 파싱 (세 번째 컬럼의 모든 항목을 후보로 사용, 첫 번째가 정답)
-        gt_ids = [parse_news_id(nid) for nid in gt_str.split()]
-        if not gt_ids:
-            continue
-        
-        next_item = gt_ids[0]  # 첫 번째가 정답
-        candidates = gt_ids  # 모든 항목을 후보로 사용 (보통 5개)
-        
-        # 모든 후보가 news_id2name에 있는지 확인
-        if next_item not in news_id2name:
-            continue
-        if not all(cid in news_id2name for cid in candidates):
-            continue
+        # 세 번째 컬럼(후보) 파싱
+        gt_ids = []
+        if gt_str and str(gt_str).strip():
+            gt_ids = [parse_news_id(nid) for nid in str(gt_str).split()]
         
         # 패딩 추가 (최대 길이 50으로 제한)
         max_len = 50
-        seq_padded = seq_ids[-max_len:] + [padding_item_id] * max(0, max_len - len(seq_ids))
-        len_seq = min(len(seq_ids), max_len)
+        
+        # 학습/검증용: 두 번째 컬럼(히스토리)에서 마지막 아이템을 정답으로
+        # 히스토리에서 마지막 아이템을 정답으로, 나머지를 히스토리로
+        history = seq_ids[:-1]  # 마지막 아이템 제외한 히스토리
+        next_item_from_history = seq_ids[-1]  # 마지막 아이템이 정답
+        
+        if next_item_from_history not in news_id2name:
+            continue
+        
+        # 히스토리 패딩
+        history_padded = history[-max_len:] + [padding_item_id] * max(0, max_len - len(history))
+        len_seq = min(len(history), max_len)
+        
+        # 테스트용: 세 번째 컬럼의 후보 사용 (있는 경우)
+        if gt_ids and len(gt_ids) > 0:
+            # 세 번째 컬럼이 있으면 후보로 사용
+            next_item = gt_ids[0]  # 첫 번째가 정답
+            candidates = gt_ids  # 모든 항목을 후보로 사용
+            
+            # 모든 후보가 news_id2name에 있는지 확인
+            if next_item not in news_id2name:
+                continue
+            if not all(cid in news_id2name for cid in candidates):
+                continue
+        else:
+            # 세 번째 컬럼이 없으면 학습/검증용으로만 사용
+            next_item = next_item_from_history
+            candidates = []  # 후보 없음 (학습/검증용)
         
         session_data.append({
             'user_id': user_id,
-            'seq': seq_padded,
-            'seq_unpad': seq_ids[-max_len:],  # 최근 max_len개만 사용
+            'seq': history_padded,
+            'seq_unpad': history[-max_len:],  # 최근 max_len개만 사용
             'len_seq': len_seq,
-            'next': next_item,
-            'candidates': candidates  # 세 번째 컬럼의 모든 항목 저장
+            'next': next_item_from_history,  # 히스토리의 마지막 아이템
+            'next_from_candidates': next_item if gt_ids else None,  # 후보에서의 정답 (테스트용)
+            'candidates': candidates,  # 세 번째 컬럼의 후보 (테스트용)
+            'has_candidates': len(candidates) > 0  # 후보가 있는지 여부
         })
     
     session_df = pd.DataFrame(session_data)
     print(f"Created {len(session_df)} sessions")
+    print(f"  - Sessions with candidates (for test): {session_df['has_candidates'].sum()}")
+    print(f"  - Sessions without candidates (for train/val): {(~session_df['has_candidates']).sum()}")
     return session_df, padding_item_id
 
 def add_negative_samples(session_df, news_id2name, cans_num=10):
@@ -139,21 +164,74 @@ def add_negative_samples(session_df, news_id2name, cans_num=10):
     print("Negative sampling complete")
     return session_df
 
-def split_data(session_df, train_ratio=0.7, val_ratio=0.15):
-    """데이터를 train/val/test로 분할"""
-    print("Splitting data...")
-    n_total = len(session_df)
-    n_train = int(n_total * train_ratio)
-    n_val = int(n_total * val_ratio)
+def split_data_by_user(session_df, train_ratio=0.7, val_ratio=0.15):
+    """각 사용자별로 train/val/test로 분할
+    - 학습/검증: 두 번째 컬럼(히스토리) 데이터 100% 사용 (마지막 아이템이 정답)
+    - 테스트: 세 번째 컬럼(후보) 데이터가 있는 세션만 사용
+    """
+    print("Splitting data by user...")
+    print("Train/Val: using 100% of column 2 (history), Test: using column 3 (candidates) only")
     
-    # 랜덤 셔플
-    session_df = session_df.sample(frac=1, random_state=42).reset_index(drop=True)
+    # 테스트 데이터: 세 번째 컬럼의 후보가 있는 세션만
+    test_df = session_df[session_df['has_candidates'] == True].copy()
+    if len(test_df) > 0:
+        # 테스트용으로 next를 후보에서의 정답으로 변경
+        test_df['next'] = test_df['next_from_candidates']
+        # 불필요한 컬럼 제거
+        test_df = test_df.drop(columns=['next_from_candidates', 'has_candidates'], errors='ignore')
     
-    train_df = session_df[:n_train].copy()
-    val_df = session_df[n_train:n_train+n_val].copy()
-    test_df = session_df[n_train+n_val:].copy()
+    # 학습/검증 데이터: 두 번째 컬럼의 모든 세션 사용 (테스트용 제외)
+    train_val_df = session_df[session_df['has_candidates'] == False].copy()
+    if len(train_val_df) > 0:
+        # 불필요한 컬럼 제거
+        train_val_df = train_val_df.drop(columns=['next_from_candidates', 'has_candidates'], errors='ignore')
     
-    print(f"Train: {len(train_df)}, Val: {len(val_df)}, Test: {len(test_df)}")
+    # 학습/검증 데이터를 100% 사용하여 train/val로 분할
+    # train_ratio 비율만큼은 train, 나머지는 val (100% 사용)
+    train_sessions = []
+    val_sessions = []
+    
+    # 사용자별로 그룹화하여 분할
+    for user_id, user_sessions in train_val_df.groupby('user_id'):
+        user_sessions = user_sessions.reset_index(drop=True)
+        n_user_sessions = len(user_sessions)
+        
+        if n_user_sessions < 2:
+            # 세션이 너무 적으면 모두 학습용으로
+            train_sessions.append(user_sessions)
+            continue
+        
+        # 시간 순서대로 정렬 (인덱스 순서 유지)
+        # 두 번째 컬럼의 모든 세션을 100% 사용하여 train/val로 나눔
+        # train_ratio 비율만큼은 train, 나머지는 val (100% 사용)
+        n_train = max(1, int(n_user_sessions * train_ratio))
+        
+        # 초기 세션들 → 학습용 (두 번째 컬럼 사용)
+        train_sessions.append(user_sessions[:n_train])
+        
+        # 나머지 세션들 → 검증용 (두 번째 컬럼 사용, 100% 사용)
+        if n_train < n_user_sessions:
+            val_sessions.append(user_sessions[n_train:])
+    
+    # 리스트를 DataFrame으로 변환
+    if train_sessions:
+        train_df = pd.concat(train_sessions, ignore_index=True)
+    else:
+        train_df = pd.DataFrame()
+    
+    if val_sessions:
+        val_df = pd.concat(val_sessions, ignore_index=True)
+    else:
+        val_df = pd.DataFrame()
+    
+    print(f"Train: {len(train_df)} sessions (using 100% of column 2), Val: {len(val_df)} sessions (using 100% of column 2), Test: {len(test_df)} sessions (using column 3)")
+    
+    # 사용자별 통계
+    train_users = train_df['user_id'].nunique() if len(train_df) > 0 else 0
+    val_users = val_df['user_id'].nunique() if len(val_df) > 0 else 0
+    test_users = test_df['user_id'].nunique() if len(test_df) > 0 else 0
+    print(f"Train users: {train_users}, Val users: {val_users}, Test users: {test_users}")
+    
     return train_df, val_df, test_df
 
 def save_dataframes(train_df, val_df, test_df, news_id2name, output_dir='data/ref/mind'):
@@ -182,8 +260,8 @@ def main():
     # 시퀀스 데이터 생성 (모든 세션에 세 번째 컬럼의 후보 저장)
     session_df, padding_item_id = create_sequences('MIND.tsv', news_id2name)
     
-    # 데이터 분할
-    train_df, val_df, test_df = split_data(session_df)
+    # 데이터 분할 (각 사용자별로 시간 순서에 따라 분할)
+    train_df, val_df, test_df = split_data_by_user(session_df, train_ratio=0.7, val_ratio=0.15)
     
     # 학습 데이터에 negative sampling 적용
     print("\nApplying negative sampling to training data...")

@@ -136,6 +136,10 @@ def create_sequences(mind_file='MIND.tsv', news_id2name=None, padding_item_id=No
 
 def add_negative_samples(session_df, news_id2name, cans_num=10):
     """각 세션에 negative sampling으로 후보 추가 (학습/검증용)"""
+    if len(session_df) == 0:
+        print("Warning: Empty DataFrame, skipping negative sampling")
+        return session_df
+    
     print("Adding negative samples...")
     
     all_item_ids = list(news_id2name.keys())
@@ -143,6 +147,10 @@ def add_negative_samples(session_df, news_id2name, cans_num=10):
     def sample_candidates(row):
         seq_unpad = row['seq_unpad']
         next_item = row['next']
+        
+        # seq_unpad가 리스트가 아닌 경우 리스트로 변환
+        if not isinstance(seq_unpad, list):
+            seq_unpad = list(seq_unpad) if hasattr(seq_unpad, '__iter__') else [seq_unpad]
         
         # 후보 풀: 히스토리에 없고 정답이 아닌 아이템들
         candidate_pool = [item_id for item_id in all_item_ids 
@@ -160,17 +168,20 @@ def add_negative_samples(session_df, news_id2name, cans_num=10):
         
         return candidates
     
-    session_df['candidates'] = session_df.apply(sample_candidates, axis=1)
+    # apply 결과를 리스트로 변환하여 할당
+    candidates_list = session_df.apply(sample_candidates, axis=1).tolist()
+    session_df['candidates'] = candidates_list
     print("Negative sampling complete")
     return session_df
 
 def split_data_by_user(session_df, train_ratio=0.7, val_ratio=0.15):
     """각 사용자별로 train/val/test로 분할
-    - 학습/검증: 두 번째 컬럼(히스토리) 데이터 100% 사용 (마지막 아이템이 정답)
+    - 학습/검증: 두 번째 컬럼(히스토리) 데이터 사용 (마지막 아이템이 정답)
     - 테스트: 세 번째 컬럼(후보) 데이터가 있는 세션만 사용
+    같은 세션이 학습/검증과 테스트 모두에 사용될 수 있음
     """
     print("Splitting data by user...")
-    print("Train/Val: using 100% of column 2 (history), Test: using column 3 (candidates) only")
+    print("Train/Val: using column 2 (history), Test: using column 3 (candidates)")
     
     # 테스트 데이터: 세 번째 컬럼의 후보가 있는 세션만
     test_df = session_df[session_df['has_candidates'] == True].copy()
@@ -180,10 +191,13 @@ def split_data_by_user(session_df, train_ratio=0.7, val_ratio=0.15):
         # 불필요한 컬럼 제거
         test_df = test_df.drop(columns=['next_from_candidates', 'has_candidates'], errors='ignore')
     
-    # 학습/검증 데이터: 두 번째 컬럼의 모든 세션 사용 (테스트용 제외)
-    train_val_df = session_df[session_df['has_candidates'] == False].copy()
+    # 학습/검증 데이터: 두 번째 컬럼의 모든 세션 사용
+    # 세 번째 컬럼이 있어도 두 번째 컬럼 데이터로 학습/검증에 사용 가능
+    # (같은 세션이 학습/검증과 테스트 모두에 사용될 수 있음)
+    train_val_df = session_df.copy()  # 모든 세션 사용
     if len(train_val_df) > 0:
-        # 불필요한 컬럼 제거
+        # candidates 컬럼은 나중에 negative sampling으로 덮어쓸 예정이므로 제거하지 않음
+        # 불필요한 컬럼만 제거
         train_val_df = train_val_df.drop(columns=['next_from_candidates', 'has_candidates'], errors='ignore')
     
     # 학습/검증 데이터를 100% 사용하여 train/val로 분할

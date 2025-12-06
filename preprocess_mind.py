@@ -90,16 +90,13 @@ def create_sequences(mind_file='MIND.tsv', news_id2name=None, padding_item_id=No
         max_len = 50
         
         # 학습/검증용: 두 번째 컬럼(히스토리)에서 마지막 아이템을 정답으로
-        # 히스토리에서 마지막 아이템을 정답으로, 나머지를 히스토리로
-        history = seq_ids[:-1]  # 마지막 아이템 제외한 히스토리
-        next_item_from_history = seq_ids[-1]  # 마지막 아이템이 정답
+        # 테스트용: 두 번째 컬럼의 모든 데이터를 히스토리로 사용 (정답은 세 번째 컬럼에서)
+        history_for_train = seq_ids[:-1]  # 학습/검증용: 마지막 아이템 제외한 히스토리
+        history_for_test = seq_ids  # 테스트용: 전체 히스토리 (마지막 아이템 포함)
+        next_item_from_history = seq_ids[-1]  # 마지막 아이템이 정답 (학습/검증용)
         
         if next_item_from_history not in news_id2name:
             continue
-        
-        # 히스토리 패딩
-        history_padded = history[-max_len:] + [padding_item_id] * max(0, max_len - len(history))
-        len_seq = min(len(history), max_len)
         
         # 테스트용: 세 번째 컬럼의 후보 사용 (있는 경우)
         if gt_ids and len(gt_ids) > 0:
@@ -112,17 +109,26 @@ def create_sequences(mind_file='MIND.tsv', news_id2name=None, padding_item_id=No
                 continue
             if not all(cid in news_id2name for cid in candidates):
                 continue
+            
+            # 테스트용 히스토리 사용 (전체 포함)
+            history = history_for_test
         else:
             # 세 번째 컬럼이 없으면 학습/검증용으로만 사용
             next_item = next_item_from_history
             candidates = []  # 후보 없음 (학습/검증용)
+            # 학습/검증용 히스토리 사용 (마지막 제외)
+            history = history_for_train
+        
+        # 히스토리 패딩
+        history_padded = history[-max_len:] + [padding_item_id] * max(0, max_len - len(history))
+        len_seq = min(len(history), max_len)
         
         session_data.append({
             'user_id': user_id,
             'seq': history_padded,
             'seq_unpad': history[-max_len:],  # 최근 max_len개만 사용
             'len_seq': len_seq,
-            'next': next_item_from_history,  # 히스토리의 마지막 아이템
+            'next': next_item_from_history,  # 히스토리의 마지막 아이템 (학습/검증용)
             'next_from_candidates': next_item if gt_ids else None,  # 후보에서의 정답 (테스트용)
             'candidates': candidates,  # 세 번째 컬럼의 후보 (테스트용)
             'has_candidates': len(candidates) > 0  # 후보가 있는지 여부

@@ -201,42 +201,20 @@ def split_data_by_user(session_df, train_ratio=0.7, val_ratio=0.15):
         train_val_df = train_val_df.drop(columns=['next_from_candidates', 'has_candidates'], errors='ignore')
     
     # 학습/검증 데이터를 100% 사용하여 train/val로 분할
-    # train_ratio 비율만큼은 train, 나머지는 val (100% 사용)
-    train_sessions = []
-    val_sessions = []
-    
-    # 사용자별로 그룹화하여 분할
-    for user_id, user_sessions in train_val_df.groupby('user_id'):
-        user_sessions = user_sessions.reset_index(drop=True)
-        n_user_sessions = len(user_sessions)
-        
-        if n_user_sessions < 2:
-            # 세션이 너무 적으면 모두 학습용으로
-            train_sessions.append(user_sessions)
-            continue
-        
-        # 시간 순서대로 정렬 (인덱스 순서 유지)
-        # 두 번째 컬럼의 모든 세션을 100% 사용하여 train/val로 나눔
-        # train_ratio 비율만큼은 train, 나머지는 val (100% 사용)
-        n_train = max(1, int(n_user_sessions * train_ratio))
-        
-        # 초기 세션들 → 학습용 (두 번째 컬럼 사용)
-        train_sessions.append(user_sessions[:n_train])
-        
-        # 나머지 세션들 → 검증용 (두 번째 컬럼 사용, 100% 사용)
-        if n_train < n_user_sessions:
-            val_sessions.append(user_sessions[n_train:])
-    
-    # 리스트를 DataFrame으로 변환
-    if train_sessions:
-        train_df = pd.concat(train_sessions, ignore_index=True)
-    else:
+    # 전체 세션을 train_ratio 비율로 나눔 (100% 사용)
+    n_total = len(train_val_df)
+    if n_total == 0:
         train_df = pd.DataFrame()
-    
-    if val_sessions:
-        val_df = pd.concat(val_sessions, ignore_index=True)
-    else:
         val_df = pd.DataFrame()
+    else:
+        # 랜덤 셔플 (사용자별로 나누지 않고 전체적으로 분할)
+        train_val_df = train_val_df.sample(frac=1, random_state=42).reset_index(drop=True)
+        
+        n_train = max(1, int(n_total * train_ratio))
+        
+        # train_ratio 비율만큼은 train, 나머지는 val (100% 사용)
+        train_df = train_val_df[:n_train].copy()
+        val_df = train_val_df[n_train:].copy()
     
     print(f"Train: {len(train_df)} sessions (using 100% of column 2), Val: {len(val_df)} sessions (using 100% of column 2), Test: {len(test_df)} sessions (using column 3)")
     

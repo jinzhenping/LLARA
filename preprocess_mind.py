@@ -7,6 +7,7 @@ import pickle as pkl
 import os
 import os.path as op
 from collections import defaultdict
+import random
 
 def load_news_mapping(news_file='MIND_news.tsv'):
     """뉴스 ID를 뉴스 제목으로 매핑하는 딕셔너리 생성"""
@@ -108,6 +109,36 @@ def create_sequences(mind_file='MIND.tsv', news_id2name=None, padding_item_id=No
     print(f"Created {len(session_df)} sessions")
     return session_df, padding_item_id
 
+def add_negative_samples(session_df, news_id2name, cans_num=10):
+    """각 세션에 negative sampling으로 후보 추가 (학습/검증용)"""
+    print("Adding negative samples...")
+    
+    all_item_ids = list(news_id2name.keys())
+    
+    def sample_candidates(row):
+        seq_unpad = row['seq_unpad']
+        next_item = row['next']
+        
+        # 후보 풀: 히스토리에 없고 정답이 아닌 아이템들
+        candidate_pool = [item_id for item_id in all_item_ids 
+                         if item_id not in seq_unpad and item_id != next_item]
+        
+        # negative sampling
+        if len(candidate_pool) >= cans_num - 1:
+            negatives = random.sample(candidate_pool, cans_num - 1)
+        else:
+            negatives = candidate_pool
+        
+        # 정답 + negative 샘플들
+        candidates = negatives + [next_item]
+        random.shuffle(candidates)  # 정답 위치 숨기기
+        
+        return candidates
+    
+    session_df['candidates'] = session_df.apply(sample_candidates, axis=1)
+    print("Negative sampling complete")
+    return session_df
+
 def split_data(session_df, train_ratio=0.7, val_ratio=0.15):
     """데이터를 train/val/test로 분할"""
     print("Splitting data...")
@@ -148,17 +179,33 @@ def main():
     # 뉴스 매핑 로드
     news_id2name, news_id2idx = load_news_mapping('MIND_news.tsv')
     
-    # 시퀀스 데이터 생성
+    # 시퀀스 데이터 생성 (모든 세션에 세 번째 컬럼의 후보 저장)
     session_df, padding_item_id = create_sequences('MIND.tsv', news_id2name)
     
     # 데이터 분할
     train_df, val_df, test_df = split_data(session_df)
     
+    # 학습 데이터에 negative sampling 적용
+    print("\nApplying negative sampling to training data...")
+    train_df = add_negative_samples(train_df, news_id2name, cans_num=10)
+    
+    # 검증 데이터에 negative sampling 적용
+    print("\nApplying negative sampling to validation data...")
+    val_df = add_negative_samples(val_df, news_id2name, cans_num=10)
+    
+    # 테스트 데이터는 세 번째 컬럼의 주어진 후보 그대로 사용 (candidates 유지)
+    print("\nTest data will use candidates from third column (no negative sampling)")
+    
     # 저장
     save_dataframes(train_df, val_df, test_df, news_id2name, 'data/ref/mind')
     
-    print(f"\nPreprocessing complete!")
+    print(f"\n{'='*50}")
+    print(f"Preprocessing complete!")
+    print(f"{'='*50}")
     print(f"Padding item ID: {padding_item_id}")
+    print(f"Train sessions: {len(train_df)} (with negative sampling)")
+    print(f"Val sessions: {len(val_df)} (with negative sampling)")
+    print(f"Test sessions: {len(test_df)} (using candidates from column 3)")
     print(f"Output directory: data/ref/mind")
 
 if __name__ == '__main__':

@@ -36,6 +36,24 @@ class MindData(data.Dataset):
             candidates = self.negative_sampling(temp['seq_unpad'], next_item)
         
         cans_name=[self.item_id2name.get(can, "Unknown") for can in candidates]
+        
+        # 정답 아이템의 인덱스 찾기
+        correct_item_id = temp['next']
+        correct_idx = candidates.index(correct_item_id) if correct_item_id in candidates else 0
+        
+        # 정답을 첫 번째로 하는 순위 리스트 생성
+        # 정답이 첫 번째, 나머지는 랜덤 순서로 섞기
+        # (원래 순서는 negative sampling으로 생성된 랜덤 순서이므로 의미 없음)
+        remaining_candidates = [c for i, c in enumerate(candidates) if i != correct_idx]
+        random.shuffle(remaining_candidates)  # 나머지 후보들을 랜덤하게 섞기
+        
+        ranked_candidates = [candidates[correct_idx]] + remaining_candidates
+        ranked_cans_name = [self.item_id2name.get(can, "Unknown") for can in ranked_candidates]
+        
+        # 타겟: 순위 리스트 (한 줄에 하나씩)
+        # 정답이 첫 번째, 나머지는 랜덤 순서
+        correct_answer = "\n".join(ranked_cans_name)
+        
         sample = {
             'seq': temp['seq'],
             'seq_name': temp['seq_title'],
@@ -47,7 +65,7 @@ class MindData(data.Dataset):
             'len_cans': len(candidates),  # 동적으로 설정
             'item_id': temp['next'],
             'item_name': temp['next_item_name'],
-            'correct_answer': temp['next_item_name']
+            'correct_answer': correct_answer  # 순위 리스트로 변경
         }
         return sample
     

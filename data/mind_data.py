@@ -50,9 +50,10 @@ class MindData(data.Dataset):
         ranked_candidates = [candidates[correct_idx]] + remaining_candidates
         ranked_cans_name = [self.item_id2name.get(can, "Unknown") for can in ranked_candidates]
         
-        # 타겟: 순위 리스트 (한 줄에 하나씩)
-        # 정답이 첫 번째, 나머지는 랜덤 순서
-        correct_answer = "\n".join(ranked_cans_name)
+        # 타겟: 정답 제목 (단일) — 평가 매트릭과 일치하도록 단일 제목만 사용
+        # 순위 리스트를 학습 타겟으로 쓰면 평가 시 정답 매칭이 실패하여 모든 metric이 0이 됨
+        # 따라서 평가용 정답은 단일 제목으로 유지
+        correct_answer = temp['next_item_name']
         
         sample = {
             'seq': temp['seq'],

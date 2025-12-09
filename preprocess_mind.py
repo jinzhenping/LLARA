@@ -318,13 +318,13 @@ def main():
     # 데이터 분할 (각 사용자별로 시간 순서에 따라 분할)
     train_df, val_df, test_df = split_data_by_user(session_df, train_ratio=0.7, val_ratio=0.15)
     
-    # 학습 데이터에 negative sampling 적용
+    # 학습 데이터에 negative sampling 적용 (5개 후보: 정답 1개 + negative 4개)
     print("\nApplying negative sampling to training data...")
-    train_df = add_negative_samples(train_df, news_id2name, cans_num=10)
+    train_df = add_negative_samples(train_df, news_id2name, cans_num=5)
     
-    # 검증 데이터에 negative sampling 적용
+    # 검증 데이터에 negative sampling 적용 (5개 후보: 정답 1개 + negative 4개)
     print("\nApplying negative sampling to validation data...")
-    val_df = add_negative_samples(val_df, news_id2name, cans_num=10)
+    val_df = add_negative_samples(val_df, news_id2name, cans_num=5)
     
     # 테스트 데이터는 세 번째 컬럼의 주어진 후보 그대로 사용 (candidates 유지)
     print("\nTest data will use candidates from third column (no negative sampling)")

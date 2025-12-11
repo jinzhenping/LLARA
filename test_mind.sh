@@ -1,4 +1,4 @@
-CUDA_VISIBLE_DEVICES=1 python main.py \
+CUDA_VISIBLE_DEVICES=0 python main.py \
     --dataset mind_data \
     --data_dir data/ref/mind \
     --model_name mlp_projector \

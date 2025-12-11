@@ -1,5 +1,5 @@
-Rank these news titles by relevance: [CansHere]. Output ONLY titles, one per line. Ranking:
-List these news titles in order: [CansHere]. Output ONLY titles, one per line. Ranking:
-Rank: [CansHere]. Output ONLY titles, one per line. Ranking:
-IMPORTANT: Output ONLY news titles from [CansHere], one per line. NO articles, NO explanations, NO other text. Just titles. Ranking:
+Rank these news titles by relevance: [CansHere]. Output EXACTLY 5 lines, one title per line, using ONLY the candidate titles. No numbering, no extra text.
+List these news titles in order: [CansHere]. Output EXACTLY 5 lines, one title per line, using ONLY the candidate titles. No numbering, no extra text.
+Rank: [CansHere]. Output EXACTLY 5 lines, one title per line, using ONLY the candidate titles. No numbering, no extra text.
+IMPORTANT: Output EXACTLY 5 lines of news titles from [CansHere], one per line. NO articles, NO explanations, NO other text. Just the 5 titles in ranked order.
 

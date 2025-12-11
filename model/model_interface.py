@@ -9,6 +9,7 @@ import pytorch_lightning as pl
 
 from transformers import LlamaForCausalLM, LlamaTokenizer
 import random
+import re
 from pandas.core.frame import DataFrame
 import os.path as op
 import os
@@ -93,8 +94,16 @@ class MInterface(pl.LightningModule):
 
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
-        # max_gen_length를 256으로 증가 (5개 제목을 모두 포함하기 위해)
-        generate_output = self.generate(batch, max_gen_length=256, temperature=0.7, do_sample=True)
+        # 더 결정적인 출력을 위해 temperature/탐색 파라미터 조정
+        generate_output = self.generate(
+            batch,
+            max_gen_length=256,
+            temperature=0.0,
+            do_sample=False,
+            repetition_penalty=2.0,
+            top_p=0.7,
+            top_k=20
+        )
         output=[]
         for i,generate in enumerate(generate_output):
             real=batch['correct_answer'][i]
@@ -137,11 +146,16 @@ class MInterface(pl.LightningModule):
     @torch.no_grad()
     def test_step(self, batch, batch_idx):
         # max_gen_length를 256으로 증가 (5개 제목을 모두 포함하기 위해)
-        # temperature를 매우 낮춰서 더 결정적인 출력 생성
-        # repetition_penalty를 높여서 반복 방지
-        # top_p와 top_k를 사용하여 더 집중된 생성
-        generate_output = self.generate(batch, max_gen_length=256, temperature=0.01, do_sample=True, 
-                                        repetition_penalty=2.0, top_p=0.9, top_k=50)
+        # 결정적인 출력 생성: temperature 0, 탐색 폭 축소
+        generate_output = self.generate(
+            batch,
+            max_gen_length=256,
+            temperature=0.0,
+            do_sample=False,
+            repetition_penalty=2.0,
+            top_p=0.7,
+            top_k=20
+        )
         output=[]
         for i,generate in enumerate(generate_output):
             real=batch['correct_answer'][i]
@@ -572,17 +586,24 @@ class MInterface(pl.LightningModule):
         """생성된 텍스트에서 후보들의 순위를 파싱
         생성 텍스트가 기사 본문인 경우에도 후보를 찾아 순위를 파싱
         """
+        def _normalize(text):
+            # 알파벳/숫자/공백만 남기고 소문자화
+            return re.sub(r'[^a-z0-9]+', ' ', text.lower()).strip()
+
         # 빈 생성 처리
         if not generate_text or not generate_text.strip():
             # 빈 생성인 경우, 후보를 원래 순서대로 반환 (랜덤 순서이므로 의미 없음)
             return list(range(len(candidates)))
         
         generate_lower = generate_text.strip().lower()
+        generate_norm = _normalize(generate_lower)
         candidates_lower = [c.strip().lower() for c in candidates]
+        candidates_norm = [_normalize(c) for c in candidates_lower]
         
         # 각 후보의 제목에서 핵심 키워드 추출 (카테고리 제거)
         # 예: "news - newscrime: Judge calls..." -> "judge calls"
         candidate_keywords = []
+        candidate_keywords_norm = []
         for cand in candidates_lower:
             # ":" 또는 "-" 이후의 텍스트를 키워드로 사용
             if ":" in cand:
@@ -594,37 +615,39 @@ class MInterface(pl.LightningModule):
             # 처음 3-5개 단어만 사용 (너무 긴 제목 처리)
             words = keywords.split()[:5]
             candidate_keywords.append(" ".join(words))
+            candidate_keywords_norm.append(_normalize(" ".join(words)))
         
         # 줄 단위로 분리 (여러 줄 출력인 경우)
-        lines = [line.strip() for line in generate_lower.split('\n') if line.strip()]
+        raw_lines = [line.strip() for line in generate_lower.split('\n') if line.strip()]
+        norm_lines = [_normalize(line) for line in raw_lines]
         
         # 각 후보가 어느 줄에 나타나는지 찾기
         candidate_positions = []
-        for i, (cand, keywords) in enumerate(zip(candidates_lower, candidate_keywords)):
+        for i, (cand, cand_norm, keywords, keywords_norm) in enumerate(zip(candidates_lower, candidates_norm, candidate_keywords, candidate_keywords_norm)):
             found = False
             best_match = None
             best_score = 0
             
             # 각 줄에서 후보를 찾기
-            for line_idx, line in enumerate(lines):
+            for line_idx, line in enumerate(norm_lines):
                 # 정확한 매칭
-                if cand == line:
+                if cand_norm == line:
                     candidate_positions.append((line_idx, 0, i, cand, 100))
                     found = True
                     break
                 
                 # 후보가 줄에 포함되어 있는지 확인
-                if cand in line:
-                    pos = line.find(cand)
+                if cand_norm in line:
+                    pos = line.find(cand_norm)
                     candidate_positions.append((line_idx, pos, i, cand, 90))
                     found = True
                     break
                 
                 # 키워드 매칭 (기사 본문에서도 찾기)
-                if keywords and len(keywords) > 10:  # 키워드가 충분히 긴 경우만
-                    if keywords in line:
-                        pos = line.find(keywords)
-                        score = len(keywords) / len(cand) * 70  # 부분 매칭 점수
+                if keywords_norm and len(keywords_norm) > 10:  # 키워드가 충분히 긴 경우만
+                    if keywords_norm in line:
+                        pos = line.find(keywords_norm)
+                        score = len(keywords_norm) / len(cand_norm) * 70  # 부분 매칭 점수
                         if best_match is None or score > best_score:
                             best_match = (line_idx, pos, i, cand, score)
                             best_score = score
@@ -636,16 +659,16 @@ class MInterface(pl.LightningModule):
             
             # 줄 단위로 찾지 못한 경우, 전체 텍스트에서 찾기
             if not found:
-                pos = generate_lower.find(cand)
+                pos = generate_norm.find(cand_norm)
                 if pos >= 0:
                     # 줄 번호를 추정 (대략적인 위치)
-                    line_idx = generate_lower[:pos].count('\n')
+                    line_idx = generate_norm[:pos].count('\n')
                     candidate_positions.append((line_idx, pos, i, cand, 50))
-                elif keywords and len(keywords) > 10:
+                elif keywords_norm and len(keywords_norm) > 10:
                     # 키워드로 찾기
-                    pos = generate_lower.find(keywords)
+                    pos = generate_norm.find(keywords_norm)
                     if pos >= 0:
-                        line_idx = generate_lower[:pos].count('\n')
+                        line_idx = generate_norm[:pos].count('\n')
                         candidate_positions.append((line_idx, pos, i, cand, 30))
         
         # 순위 정렬: 먼저 줄 번호로, 그 다음 줄 내 위치로, 마지막으로 매칭 점수로

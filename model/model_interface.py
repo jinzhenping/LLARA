@@ -123,7 +123,11 @@ class MInterface(pl.LightningModule):
         df=DataFrame(self.val_content)
         if not os.path.exists(self.hparams.output_dir):
             os.makedirs(self.hparams.output_dir)
-        df.to_csv(op.join(self.hparams.output_dir, 'valid.csv'))
+        # CSV 저장 시 특수 문자 이스케이프 처리
+        df.to_csv(op.join(self.hparams.output_dir, 'valid.csv'), 
+                  quoting=1,  # QUOTE_ALL: 모든 필드를 따옴표로 감싸기
+                  escapechar='\\',  # 이스케이프 문자 설정
+                  doublequote=True)  # 이중 따옴표 처리
         
         # Ranking metrics 계산
         mrr, ndcg5, hit1 = self.calculate_ranking_metrics(self.val_content)

@@ -50,10 +50,15 @@ class MindData(data.Dataset):
         ranked_candidates = [candidates[correct_idx]] + remaining_candidates
         ranked_cans_name = [self.item_id2name.get(can, "Unknown") for can in ranked_candidates]
         
-        # 타겟: 정답 제목 (단일) — 평가 매트릭과 일치하도록 단일 제목만 사용
-        # 순위 리스트를 학습 타겟으로 쓰면 평가 시 정답 매칭이 실패하여 모든 metric이 0이 됨
-        # 따라서 평가용 정답은 단일 제목으로 유지
-        correct_answer = temp['next_item_name']
+        # 학습 타겟: 랭킹 리스트 (프롬프트가 5개 제목을 랭킹 순서로 출력하라고 요구하므로)
+        # 정답을 첫 번째로 하고 나머지 4개를 뒤에 배치한 5개 제목 리스트
+        # 각 제목을 줄바꿈으로 구분 (프롬프트가 "one per line"을 요구)
+        if self.stage == 'train':
+            # 학습 시: 랭킹 리스트를 타겟으로 사용 (프롬프트와 일치)
+            correct_answer = '\n'.join(ranked_cans_name)
+        else:
+            # 평가 시: 단일 제목을 사용 (평가 매트릭과 일치)
+            correct_answer = temp['next_item_name']
         
         sample = {
             'seq': temp['seq'],
@@ -66,7 +71,7 @@ class MindData(data.Dataset):
             'len_cans': len(candidates),  # 동적으로 설정
             'item_id': temp['next'],
             'item_name': temp['next_item_name'],
-            'correct_answer': correct_answer  # 순위 리스트로 변경
+            'correct_answer': correct_answer  # 학습: 랭킹 리스트, 평가: 단일 제목
         }
         return sample
     
